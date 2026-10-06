@@ -21,7 +21,7 @@
 
 > **En desarrollo activo.** La versión publicada es experimental. Compilación y pruebas locales están documentadas; no se garantiza velocidad completa ni compatibilidad universal en PS4. El seguimiento de v0.5.1 informa rendimiento similar en consola, todavía sin un perfil físico detallado. No se incluyen juegos comerciales ni BIOS externas.
 
-## Menú
+## Así se ve
 
 ![Biblioteca XMB de R2RETRO, captura desktop v0.4.2](docs/media/xmb-v042.png)
 
@@ -172,10 +172,31 @@ En Windows: `scripts\build.bat test` o `scripts\build.bat`, usando WSL Ubuntu-24
 
 [Hoja de ruta y criterios de cierre](docs/ROADMAP.md) · [Estado e historial técnico](docs/STATUS.md)
 
-## Participar y créditos
+## Licencia y descargo de responsabilidad
 
-Abre un [reporte](https://github.com/R2two/R2RETRO/issues/new/choose) con versión, modelo, firmware/GoldHEN, pasos, backend y logs pertinentes. No adjuntes ROMs, partidas privadas ni credenciales. [Guía para colaborar](CONTRIBUTING.md).
+El código propio de **R2RETRO** se publica bajo la **licencia GPL-3.0 o posterior**. Consulta [LICENCIA](LICENSE). Los núcleos, bibliotecas y demás componentes de terceros conservan sus respectivas licencias y avisos; esta licencia no se extiende automáticamente a imágenes, fuentes ni marcas.
 
-R2RETRO utiliza Mupen64Plus-Next, GLideN64, SameBoy, mGBA, FCEUmm, bsnes-mercury, SDL, OpenOrbis/PacBrew y Libretro. Consulta [dependencias](docs/THIRD-PARTY.md) y [avisos de terceros](THIRD_PARTY_LICENSES.md).
+R2RETRO es un **proyecto independiente creado por fans**, sin afiliación, patrocinio ni aprobación de Nintendo, Sony Interactive Entertainment o los equipos de los proyectos citados. Las marcas de los sistemas Nintendo emulados pertenecen a sus respectivos titulares; PlayStation y PS4 son marcas de Sony Interactive Entertainment.
 
-Código propio bajo **[GPL-3.0-or-later](LICENSE)**. Dependencias, imágenes, fuentes y marcas conservan sus avisos y derechos; la licencia del código no relicencia el arte. Proyecto independiente, sin afiliación oficial con Sony o Nintendo.
+**Juega solo a juegos que poseas y utiliza copias obtenidas legalmente.** R2RETRO no incluye ROMs comerciales ni BIOS externas, y no proporciona ayuda para encontrar o compartir copias no autorizadas de juegos. El software se ofrece **«tal cual», sin garantías**, conforme a los términos de su licencia. Es un proyecto experimental: la compatibilidad y el rendimiento varían según el sistema y el juego.
+
+### Agradecimientos a los proyectos originales
+
+R2RETRO es posible gracias al trabajo de estas comunidades y sus colaboradores:
+
+- **[Libretro](https://github.com/libretro):** API e infraestructura compartida, [bases de datos](https://github.com/libretro/libretro-database) y [miniaturas](https://github.com/libretro-thumbnails/libretro-thumbnails).
+- **[Mupen64Plus-Next](https://github.com/libretro/mupen64plus-libretro-nx)** y los equipos de **[Mupen64Plus](https://github.com/mupen64plus), [GLideN64](https://github.com/libretro/mupen64plus-libretro-nx/tree/12edd2c74a517ff86dfa8cfc71ad75e4c10486d5/GLideN64), [Angrylion](https://github.com/libretro/mupen64plus-libretro-nx/tree/12edd2c74a517ff86dfa8cfc71ad75e4c10486d5/mupen64plus-video-angrylion) y [CXD4](https://github.com/libretro/mupen64plus-libretro-nx/tree/12edd2c74a517ff86dfa8cfc71ad75e4c10486d5/mupen64plus-rsp-cxd4):** componentes de emulación de Nintendo 64 integrados en ese árbol de código.
+- **[SameBoy / Lior Halphon](https://github.com/LIJI32/SameBoy)** y **[mGBA](https://github.com/mgba-emu/mgba):** núcleos de Game Boy / Game Boy Color y Game Boy Advance.
+- **[FCEUmm](https://github.com/libretro/libretro-fceumm)** y **[bsnes-mercury](https://github.com/libretro/bsnes-mercury):** núcleos de NES y Super Nintendo.
+- **[SDL](https://github.com/libsdl-org/SDL), [SDL_image](https://github.com/libsdl-org/SDL_image) y [SDL_ttf](https://github.com/libsdl-org/SDL_ttf):** soporte multimedia, imágenes y texto.
+- **[OpenOrbis](https://github.com/OpenOrbis), [PacBrew](https://github.com/PacBrew) y [GoldHEN Plugins SDK](https://github.com/GoldHEN/GoldHEN_Plugins_SDK):** herramientas y componentes utilizados para PS4.
+
+El inventario de dependencias, revisiones y otros componentes —incluidos curl, mbedTLS y las bibliotecas auxiliares— está en [Dependencias de terceros](docs/THIRD-PARTY.md) y [Avisos y licencias de terceros](THIRD_PARTY_LICENSES.md). El crédito de cada componente corresponde a sus autores originales; mencionarlos no implica que respalden R2RETRO.
+
+### Reportes y colaboración
+
+Abre un [reporte](https://github.com/R2two/R2RETRO/issues/new/choose) con versión, modelo, firmware/GoldHEN, pasos, backend y logs pertinentes. No adjuntes ROMs, partidas privadas ni credenciales. [Guía para colaborar](https://github.com/R2two/R2RETRO/blob/main/CONTRIBUTING.md).
+
+R2RETRO utiliza [Mupen64Plus-Next](https://github.com/libretro/mupen64plus-libretro-nx), [GLideN64](https://github.com/libretro/mupen64plus-libretro-nx/tree/12edd2c74a517ff86dfa8cfc71ad75e4c10486d5/GLideN64), [SameBoy](https://github.com/LIJI32/SameBoy), [mGBA](https://github.com/mgba-emu/mgba), [FCEUmm](https://github.com/libretro/libretro-fceumm), [bsnes-mercury](https://github.com/libretro/bsnes-mercury), [SDL](https://github.com/libsdl-org/SDL), [OpenOrbis](https://github.com/OpenOrbis)/[PacBrew](https://github.com/PacBrew) y [Libretro](https://github.com/libretro). Consulta [dependencias](https://github.com/R2two/R2RETRO/blob/main/docs/THIRD-PARTY.md) y [avisos de terceros](https://github.com/R2two/R2RETRO/blob/main/THIRD_PARTY_LICENSES.md).
+
+Código propio bajo [**GPL-3.0-or-later**](https://github.com/R2two/R2RETRO/blob/main/LICENSE). Dependencias, imágenes, fuentes y marcas conservan sus avisos y derechos; la licencia del código no relicencia el arte. Proyecto independiente, sin afiliación oficial con Sony o Nintendo.
