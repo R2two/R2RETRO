@@ -81,7 +81,7 @@ SHA-256
 4889669f6e556fc8b229111be2f5a1c4f650ecbbdb66025bdfacf990f8bb4483
 ```
 
-1. Descarga el `.pkg` desde **Releases** y compara su SHA-256 con el archivo `.sha256` adjunto.
+1. Descarga el `.pkg` desde **Releases** y compara su SHA-256 con el [archivo de verificación](docs/releases/R2RETRO-v0.5.1-gpu-hle.pkg.sha256).
 2. En una PS4 con un entorno homebrew compatible y GoldHEN ya configurado, instala el paquete con su instalador de PKG y abre **R2RETRO**. La combinación exacta de firmware/GoldHEN soportada no está certificada.
 3. Para una primera comprobación sin juegos, abre **Acerca de → Prueba Nintendo 64**.
 4. Coloca tus ROMs propias en `/data/R2N64/roms/` o en `R2N64/roms/` dentro de un USB reconocido por la consola.
