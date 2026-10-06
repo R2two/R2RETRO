@@ -21,7 +21,7 @@
 
 > **En desarrollo activo.** La versión publicada es experimental. Compilación y pruebas locales están documentadas; no se garantiza velocidad completa ni compatibilidad universal en PS4. El seguimiento de v0.5.1 informa rendimiento similar en consola, todavía sin un perfil físico detallado. No se incluyen juegos comerciales ni BIOS externas.
 
-## Así se ve
+## Menú
 
 ![Biblioteca XMB de R2RETRO, captura desktop v0.4.2](docs/media/xmb-v042.png)
 
