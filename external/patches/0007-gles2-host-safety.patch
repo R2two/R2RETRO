@@ -1,0 +1,304 @@
+--- a/libretro/libretro.c
++++ b/libretro/libretro.c
+@@ -1994,23 +1994,8 @@
+ 
+     update_variables(true);
+ 
+-    if(current_rdp_type == RDP_PLUGIN_GLIDEN64 && EnableThreadedRenderer)
+-    {
+-       initializing = true;
+-       retro_thread = co_active();
+-       game_thread = co_create(65536 * sizeof(void*) * 16, gln64_thr_gl_invoke_command_loop);
+-    }
+-
+-    if (!game_thread)
+-    {
+-        retro_thread = co_active();
+-        game_thread = co_create(65536 * sizeof(void*) * 16, (void (*)(void))EmuThreadFunction);
+-    }
+-    if (!game_thread)
+-        return false;
+-
+-    init_audio_libretro(audio_buffer_size);
+-
++    /* Negotiate before allocating session audio/coroutines or opening the ROM.
++     * A frontend may then retry its software profile after a clean refusal. */
+     params.context_reset         = context_reset;
+     params.context_destroy       = context_destroy;
+     params.environ_cb            = environ_cb;
+@@ -2023,6 +2008,25 @@
+             log_cb(RETRO_LOG_ERROR, CORE_NAME ": libretro frontend doesn't have OpenGL support\n");
+         return false;
+     }
++
++
++    if(current_rdp_type == RDP_PLUGIN_GLIDEN64 && EnableThreadedRenderer)
++    {
++       initializing = true;
++       retro_thread = co_active();
++       game_thread = co_create(65536 * sizeof(void*) * 16, gln64_thr_gl_invoke_command_loop);
++    }
++
++    if (!game_thread)
++    {
++        retro_thread = co_active();
++        game_thread = co_create(65536 * sizeof(void*) * 16, (void (*)(void))EmuThreadFunction);
++    }
++    if (!game_thread)
++        return false;
++
++    init_audio_libretro(audio_buffer_size);
++
+ 
+ #ifdef HAVE_PARALLEL_RDP
+     if (current_rdp_type == RDP_PLUGIN_PARALLEL)
+--- a/libretro-common/glsm/glsm.c
++++ b/libretro-common/glsm/glsm.c
+@@ -269,6 +269,15 @@
+ static bool copy_image_support = 0;
+ static struct gl_program_uniforms program_uniforms[MAX_UNIFORMS][MAX_UNIFORMS];
+ static struct gl_framebuffers* framebuffers[MAX_FRAMEBUFFERS];
++/* GL object names and uniform locations are opaque, not bounded indexes.
++ * Array writes invalidate this optional scalar-value cache until relinking. */
++static bool program_uniforms_valid[MAX_UNIFORMS];
++
++static bool uniform_cacheable(GLint location)
++{
++   return gl_state.program < MAX_UNIFORMS && location >= 0 &&
++      (GLuint)location < MAX_UNIFORMS && program_uniforms_valid[gl_state.program];
++}
+ 
+ static GLenum active_texture;
+ static int window_first = 0;
+@@ -962,6 +971,12 @@
+    log_cb(RETRO_LOG_INFO, "glLinkProgram.\n");
+ #endif
+    glLinkProgram(program);
++   if (program < MAX_UNIFORMS) {
++      GLint linked = GL_FALSE;
++      glGetProgramiv(program, GL_LINK_STATUS, &linked);
++      memset(program_uniforms[program], 0, sizeof(program_uniforms[program]));
++      program_uniforms_valid[program] = linked == GL_TRUE;
++   }
+ }
+ 
+ /*
+@@ -986,7 +1001,8 @@
+    else if (target == GL_READ_FRAMEBUFFER)
+       type = 1;
+ #endif
+-   if (gl_state.framebuf[type].desired_location < MAX_FRAMEBUFFERS) {
++   if (gl_state.framebuf[type].desired_location < MAX_FRAMEBUFFERS &&
++       framebuffers[gl_state.framebuf[type].desired_location]) {
+       framebuffers[gl_state.framebuf[type].desired_location]->target = textarget;
+       if (attachment == GL_COLOR_ATTACHMENT0) {
+          if (framebuffers[gl_state.framebuf[type].desired_location]->color_attachment != texture) {
+@@ -1219,7 +1235,8 @@
+    else if (target == GL_READ_FRAMEBUFFER)
+       type = 1;
+ #endif
+-   if (gl_state.framebuf[type].desired_location < MAX_FRAMEBUFFERS) {
++   if (gl_state.framebuf[type].desired_location < MAX_FRAMEBUFFERS &&
++       framebuffers[gl_state.framebuf[type].desired_location]) {
+       framebuffers[gl_state.framebuf[type].desired_location]->target = renderbuffertarget;
+       if (attachment == GL_COLOR_ATTACHMENT0) {
+          if (framebuffers[gl_state.framebuf[type].desired_location]->color_attachment != renderbuffer) {
+@@ -1666,9 +1683,10 @@
+    log_cb(RETRO_LOG_INFO, "glCreateProgram.\n");
+ #endif
+    GLuint temp = glCreateProgram();
+-   int i;
+-   for (i = 0; i < MAX_UNIFORMS; ++i)
+-      memset(&program_uniforms[temp][i], 0, sizeof(struct gl_program_uniforms));
++   if (temp < MAX_UNIFORMS) {
++      memset(program_uniforms[temp], 0, sizeof(program_uniforms[temp]));
++      program_uniforms_valid[temp] = true;
++   }
+    return temp;
+ }
+ 
+@@ -1965,6 +1983,10 @@
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glUniform1f.\n");
+ #endif
++   if (!uniform_cacheable(location)) {
++      glUniform1f(location, v0);
++      return;
++   }
+    if (program_uniforms[gl_state.program][location].uniform1f != v0) {
+       glUniform1f(location, v0);
+       program_uniforms[gl_state.program][location].uniform1f = v0;
+@@ -1982,6 +2004,12 @@
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glUniform1fv.\n");
+ #endif
++   if (count != 1 && gl_state.program < MAX_UNIFORMS)
++      program_uniforms_valid[gl_state.program] = false;
++   if (!uniform_cacheable(location)) {
++      glUniform1fv(location, count, value);
++      return;
++   }
+    if (program_uniforms[gl_state.program][location].uniform1f != value[0]) {
+       glUniform1fv(location, count, value);
+       program_uniforms[gl_state.program][location].uniform1f = value[0];
+@@ -1999,6 +2027,12 @@
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glUniform1iv.\n");
+ #endif
++   if (count != 1 && gl_state.program < MAX_UNIFORMS)
++      program_uniforms_valid[gl_state.program] = false;
++   if (!uniform_cacheable(location)) {
++      glUniform1iv(location, count, value);
++      return;
++   }
+    if (program_uniforms[gl_state.program][location].uniform1i != value[0]) {
+       glUniform1iv(location, count, value);
+       program_uniforms[gl_state.program][location].uniform1i = value[0];
+@@ -2090,6 +2124,10 @@
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glUniform1i.\n");
+ #endif
++   if (!uniform_cacheable(location)) {
++      glUniform1i(location, v0);
++      return;
++   }
+    if (program_uniforms[gl_state.program][location].uniform1i != v0) {
+       glUniform1i(location, v0);
+       program_uniforms[gl_state.program][location].uniform1i = v0;
+@@ -2107,6 +2145,10 @@
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glUniform2f.\n");
+ #endif
++   if (!uniform_cacheable(location)) {
++      glUniform2f(location, v0, v1);
++      return;
++   }
+    if (program_uniforms[gl_state.program][location].uniform2f[0] != v0 || program_uniforms[gl_state.program][location].uniform2f[1] != v1) {
+       glUniform2f(location, v0, v1);
+       program_uniforms[gl_state.program][location].uniform2f[0] = v0;
+@@ -2125,6 +2167,10 @@
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glUniform2i.\n");
+ #endif
++   if (!uniform_cacheable(location)) {
++      glUniform2i(location, v0, v1);
++      return;
++   }
+    if (program_uniforms[gl_state.program][location].uniform2i[0] != v0 || program_uniforms[gl_state.program][location].uniform2i[1] != v1) {
+       glUniform2i(location, v0, v1);
+       program_uniforms[gl_state.program][location].uniform2i[0] = v0;
+@@ -2143,6 +2189,12 @@
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glUniform2fv.\n");
+ #endif
++   if (count != 1 && gl_state.program < MAX_UNIFORMS)
++      program_uniforms_valid[gl_state.program] = false;
++   if (!uniform_cacheable(location)) {
++      glUniform2fv(location, count, value);
++      return;
++   }
+    if (program_uniforms[gl_state.program][location].uniform2f[0] != value[0] || program_uniforms[gl_state.program][location].uniform2f[1] != value[1]) {
+       glUniform2fv(location, count, value);
+       program_uniforms[gl_state.program][location].uniform2f[0] = value[0];
+@@ -2161,6 +2213,10 @@
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glUniform3f.\n");
+ #endif
++   if (!uniform_cacheable(location)) {
++      glUniform3f(location, v0, v1, v2);
++      return;
++   }
+    if (program_uniforms[gl_state.program][location].uniform3f[0] != v0 || program_uniforms[gl_state.program][location].uniform3f[1] != v1 || program_uniforms[gl_state.program][location].uniform3f[2] != v2) {
+       glUniform3f(location, v0, v1, v2);
+       program_uniforms[gl_state.program][location].uniform3f[0] = v0;
+@@ -2180,6 +2236,12 @@
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glUniform3fv.\n");
+ #endif
++   if (count != 1 && gl_state.program < MAX_UNIFORMS)
++      program_uniforms_valid[gl_state.program] = false;
++   if (!uniform_cacheable(location)) {
++      glUniform3fv(location, count, value);
++      return;
++   }
+    if (program_uniforms[gl_state.program][location].uniform3f[0] != value[0] || program_uniforms[gl_state.program][location].uniform3f[1] != value[1] || program_uniforms[gl_state.program][location].uniform3f[2] != value[2]) {
+       glUniform3fv(location, count, value);
+       program_uniforms[gl_state.program][location].uniform3f[0] = value[0];
+@@ -2199,6 +2261,10 @@
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glUniform4i.\n");
+ #endif
++   if (!uniform_cacheable(location)) {
++      glUniform4i(location, v0, v1, v2, v3);
++      return;
++   }
+    if (program_uniforms[gl_state.program][location].uniform4i[0] != v0 || program_uniforms[gl_state.program][location].uniform4i[1] != v1 || program_uniforms[gl_state.program][location].uniform4i[2] != v2 || program_uniforms[gl_state.program][location].uniform4i[3] != v3) {
+       glUniform4i(location, v0, v1, v2, v3);
+       program_uniforms[gl_state.program][location].uniform4i[0] = v0;
+@@ -2219,6 +2285,10 @@
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glUniform4f.\n");
+ #endif
++   if (!uniform_cacheable(location)) {
++      glUniform4f(location, v0, v1, v2, v3);
++      return;
++   }
+    if (program_uniforms[gl_state.program][location].uniform4f[0] != v0 || program_uniforms[gl_state.program][location].uniform4f[1] != v1 || program_uniforms[gl_state.program][location].uniform4f[2] != v2 || program_uniforms[gl_state.program][location].uniform4f[3] != v3) {
+       glUniform4f(location, v0, v1, v2, v3);
+       program_uniforms[gl_state.program][location].uniform4f[0] = v0;
+@@ -2239,6 +2309,12 @@
+ #ifdef GLSM_DEBUG
+    log_cb(RETRO_LOG_INFO, "glUniform4fv.\n");
+ #endif
++   if (count != 1 && gl_state.program < MAX_UNIFORMS)
++      program_uniforms_valid[gl_state.program] = false;
++   if (!uniform_cacheable(location)) {
++      glUniform4fv(location, count, value);
++      return;
++   }
+    if (program_uniforms[gl_state.program][location].uniform4f[0] != value[0] || program_uniforms[gl_state.program][location].uniform4f[1] != value[1] || program_uniforms[gl_state.program][location].uniform4f[2] != value[2] || program_uniforms[gl_state.program][location].uniform4f[3] != value[3]) {
+       glUniform4fv(location, count, value);
+       program_uniforms[gl_state.program][location].uniform4f[0] = value[0];
+@@ -3054,15 +3130,20 @@
+    gl_state.framebuf[1].desired_location        = default_framebuffer;
+ 
+    glBindFramebuffer(GL_FRAMEBUFFER, default_framebuffer);
+-   GLint params;
+-   if (!resetting_context)
+-      framebuffers[default_framebuffer] = (struct gl_framebuffers*)calloc(1, sizeof(struct gl_framebuffers));
+-
+-   glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &params);
+-   framebuffers[default_framebuffer]->color_attachment = params;
+-   glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &params);
+-   framebuffers[default_framebuffer]->depth_attachment = params;
+-   framebuffers[default_framebuffer]->target = GL_TEXTURE_2D;
++   if (default_framebuffer < MAX_FRAMEBUFFERS) {
++      GLint params = 0;
++      if (!resetting_context) {
++         free(framebuffers[default_framebuffer]);
++         framebuffers[default_framebuffer] = (struct gl_framebuffers*)calloc(1, sizeof(struct gl_framebuffers));
++      }
++      if (framebuffers[default_framebuffer]) {
++         glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &params);
++         framebuffers[default_framebuffer]->color_attachment = params;
++         glGetFramebufferAttachmentParameteriv(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &params);
++         framebuffers[default_framebuffer]->depth_attachment = params;
++         framebuffers[default_framebuffer]->target = GL_TEXTURE_2D;
++      }
++   }
+ 
+    gl_state.cullface.mode               = GL_BACK;
+    gl_state.frontface.mode              = GL_CCW;
+--- a/GLideN64/src/Graphics/OpenGLContext/opengl_GLInfo.cpp
++++ b/GLideN64/src/Graphics/OpenGLContext/opengl_GLInfo.cpp
+@@ -221,6 +221,10 @@
+ 	eglImage = eglImage &&
+ 	        ( (isGLES2 && GraphicBufferWrapper::isSupportAvailable()) || (isGLESX && GraphicBufferWrapper::isPublicSupportAvailable()) ) &&
+ 		    (renderer != Renderer::PowerVR) && (renderer != Renderer::Tegra) && (renderer != Renderer::Angle);
++#else
++	// Only the Android reader allocates/binds EGL images. Other platforms use
++	// ordinary 2D storage even if their EGL driver advertises image extensions.
++	eglImage = false;
+ #endif
+ 
+ 	if (renderer == Renderer::Intel) {

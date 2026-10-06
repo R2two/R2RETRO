@@ -1,0 +1,29 @@
+{
+  "schema": "r2n64.pokemon-red.height-profile.v1",
+  "map_name": "PalletTown",
+  "map_id": 0,
+  "description": "Original experimental interpretation of verified Pallet tile identities and building footprints. Heights and tints are authored, not original game data. No commercial pixels or map block bytes included.",
+  "tile_materials": {
+    "3": "flower",
+    "14": "fence",
+    "20": "water",
+    "42": "boundary",
+    "43": "boundary",
+    "50": "water",
+    "51": "water",
+    "58": "boundary",
+    "59": "boundary",
+    "70": "sign",
+    "71": "sign",
+    "84": "water",
+    "85": "fence",
+    "86": "sign",
+    "87": "sign"
+  },
+  "overrides": [],
+  "buildings": [
+    {"x": 8, "z": 6, "width": 8, "depth": 6, "roof_rows": 2, "eaves": 3, "rise": 1},
+    {"x": 24, "z": 6, "width": 8, "depth": 6, "roof_rows": 2, "eaves": 3, "rise": 1},
+    {"x": 20, "z": 16, "width": 12, "depth": 8, "roof_rows": 4, "eaves": 3.5, "rise": 1.2}
+  ]
+}

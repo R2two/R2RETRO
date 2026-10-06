@@ -1,0 +1,16 @@
+diff --git a/mupen64plus-video-angrylion/interface.c b/mupen64plus-video-angrylion/interface.c
+--- a/mupen64plus-video-angrylion/interface.c
++++ b/mupen64plus-video-angrylion/interface.c
+@@ -321,7 +321,11 @@ void angrylionProcessRDPList(void)
+ 
+ void angrylionRomClosed (void)
+ {
+-  n64video_close();
++  if (angrylion_init)
++  {
++    n64video_close();
++    angrylion_init = false;
++  }
+ }
+ 
+ int angrylionRomOpen(void)

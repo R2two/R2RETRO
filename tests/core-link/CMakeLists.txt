@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(R2N64CoreLinkCheck LANGUAGES CXX)
+if(NOT PS4)
+    message(FATAL_ERROR "Use the installed OpenOrbis toolchain for this link check")
+endif()
+add_executable(core_link_check main.cpp)
+target_include_directories(core_link_check PRIVATE "${R2N64_CORE_SOURCE}/libretro-common/include")
+target_link_libraries(core_link_check PRIVATE "${R2N64_CORE_LIBRARY}" png16 z ScePigletv2VSH)

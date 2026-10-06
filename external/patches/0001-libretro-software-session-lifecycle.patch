@@ -1,0 +1,143 @@
+--- a/libretro/libretro.c
++++ b/libretro/libretro.c
+@@ -115,6 +115,9 @@
+ save_memory_data saved_memory;
+ 
+ static cothread_t game_thread;
++/* R2N64: a libco entrypoint must yield after EXECUTE, never return. */
++static bool game_thread_started = false;
++static bool game_thread_finished = false;
+ cothread_t retro_thread;
+ 
+ int astick_deadzone;
+@@ -451,6 +454,7 @@
+     uint16_t netplay_player = 1;
+ 
+     initializing = false;
++    game_thread_started = true;
+ 
+ #if 0
+     if (netplay_port)
+@@ -489,7 +493,13 @@
+     {
+         // Unset
+         emuThreadRunning = false;
+-    }
++        return NULL;
++    }
++
++    game_thread_finished = true;
++    /* The frontend owns and deletes this suspended stack after shutdown. */
++    for (;;)
++        co_switch(retro_thread);
+ 
+     return NULL;
+ }
+@@ -735,16 +745,22 @@
+ 
+ void retro_deinit(void)
+ {
+-    // Prevent yield to game_thread on unsuccessful context request
+-    if(load_game_successful)
+-    {
+-       if(!(current_rdp_type == RDP_PLUGIN_GLIDEN64 && EnableThreadedRenderer))
+-       {
+-           CoreDoCommand(M64CMD_STOP, 0, NULL);
+-           co_switch(game_thread); /* Let the core thread finish */
+-           CoreDoCommand(M64CMD_ROM_CLOSE, 0, NULL);
+-       }
+-    }
++    if (load_game_successful)
++        retro_unload_game();
++
++    /* Includes init followed by a failed load, or no load at all. */
++    if (game_thread)
++    {
++        co_delete(game_thread);
++        game_thread = NULL;
++    }
++    CoreDoCommand(M64CMD_ROM_CLOSE, 0, NULL);
++    cleanup_global_paths();
++    game_thread_started = false;
++    game_thread_finished = false;
++    load_game_successful = false;
++    emu_initialized = false;
++    initializing = true;
+ 
+     CoreShutdown();
+     deinit_audio_libretro();
+@@ -1944,6 +1960,11 @@
+     }
+  
+     // Init default vals
++    if (load_game_successful)
++        return false;
++    initializing = true;
++    game_thread_started = false;
++    game_thread_finished = false;
+     retro_savestate_complete = true;
+     load_game_successful = false;
+ 
+@@ -1958,6 +1979,14 @@
+        retro_thread = co_active();
+        game_thread = co_create(65536 * sizeof(void*) * 16, gln64_thr_gl_invoke_command_loop);
+     }
++
++    if (!game_thread)
++    {
++        retro_thread = co_active();
++        game_thread = co_create(65536 * sizeof(void*) * 16, (void (*)(void))EmuThreadFunction);
++    }
++    if (!game_thread)
++        return false;
+ 
+     init_audio_libretro(audio_buffer_size);
+ 
+@@ -1983,6 +2012,8 @@
+ #endif
+ 
+     game_data = malloc(game->size);
++    if (!game_data)
++        return false;
+     memcpy(game_data, game->data, game->size);
+     game_size = game->size;
+ 
+@@ -2009,6 +2040,26 @@
+ 
+ void retro_unload_game(void)
+ {
++    if (!load_game_successful)
++        return;
++
++    if (!(current_rdp_type == RDP_PLUGIN_GLIDEN64 && EnableThreadedRenderer))
++    {
++        /* STOP can yield several times before plugin cleanup has completed.
++         * Never enter a coroutine that has not executed: main_run resets STOP. */
++        if (game_thread && game_thread_started && !game_thread_finished)
++        {
++            CoreDoCommand(M64CMD_STOP, 0, NULL);
++            while (!game_thread_finished)
++                co_switch(game_thread);
++        }
++        CoreDoCommand(M64CMD_ROM_CLOSE, 0, NULL);
++        if (game_thread)
++        {
++            co_delete(game_thread);
++            game_thread = NULL;
++        }
++    }
+     if(current_rdp_type == RDP_PLUGIN_GLIDEN64 && EnableThreadedRenderer)
+     {
+        environ_clear_thread_waits_cb(1, NULL);
+@@ -2034,6 +2085,11 @@
+     }
+ 
+     cleanup_global_paths();
++    deinit_audio_libretro();
++    load_game_successful = false;
++    game_thread_started = false;
++    game_thread_finished = false;
++    initializing = true;
+     
+     emu_initialized = false;
+     context_setup_first_init = false;

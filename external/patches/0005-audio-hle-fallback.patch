@@ -1,0 +1,193 @@
+--- a/mupen64plus-rsp-hle/src/hle.h
++++ b/mupen64plus-rsp-hle/src/hle.h
+@@ -49,6 +49,8 @@
+     void* user_defined);
+ 
+ void hle_execute(struct hle_t* hle);
++/* Audio-only fast path. A false result must leave guest state untouched. */
++int hle_try_audio_task(struct hle_t* hle);
+ 
+ #endif
+ 
+--- a/mupen64plus-rsp-hle/src/hle.c
++++ b/mupen64plus-rsp-hle/src/hle.c
+@@ -140,6 +140,38 @@
+     }
+ 
+     info->uc_pfunc(hle);
++}
++
++/* R2N64: keep graphics and unidentified microcodes on CXD4. Do not use
++ * hle_execute's growing address cache: the same task address may later contain
++ * another microcode, and an unsuccessful detection must preserve LLE state. */
++int hle_try_audio_task(struct hle_t* hle)
++{
++    uint32_t data, size, ucode_data, ucode_size;
++    ucode_func_t handler;
++    if (*dmem_u32(hle, TASK_TYPE) != 2 || !is_task(hle))
++        return 0;
++    if ((*hle->sp_pc & 0xfff) != 0)
++        return 0; /* Never replace a partially executed/yielded RSP task. */
++    ucode_data = *dmem_u32(hle, TASK_UCODE_DATA) & 0xffffff;
++    ucode_size = *dmem_u32(hle, TASK_UCODE_DATA_SIZE);
++    data = *dmem_u32(hle, TASK_DATA_PTR) & 0xffffff;
++    size = *dmem_u32(hle, TASK_DATA_SIZE);
++    /* The core reserves 8 MiB of RDRAM. These checks also ensure that detection
++     * and the command-list iterator cannot walk outside that allocation. */
++    if ((ucode_data & 3) || ucode_data > 0x800000 - 0x34 ||
++        ucode_size < 0x34 || ucode_size > 0x800000 - ucode_data ||
++        (data & 3) || (size & 7) || data > 0x800000 ||
++        size > 0x800000 - data)
++        return 0;
++    handler = try_audio_task_detection(hle);
++    /* These upstream handlers are partial/approximate and have no working
++     * fallback in this fork. Preserve CXD4 execution for both microcodes. */
++    if (handler == NULL || handler == alist_process_nead_mats ||
++        handler == alist_process_nead_efz)
++        return 0;
++    handler(hle);
++    return 1;
+ }
+ 
+ /* local functions */
+--- a/mupen64plus-rsp-hle/src/plugin.c
++++ b/mupen64plus-rsp-hle/src/plugin.c
+@@ -46,6 +46,12 @@
+ 
+ /* local variables */
+ static struct hle_t g_hle;
++/* This state belongs to the audio-only CXD4 bridge, not the full HLE plugin. */
++static struct hle_t r2n64_audio_hle;
++static RSP_INFO r2n64_audio_rsp;
++static int r2n64_audio_enabled;
++static int r2n64_audio_ready;
++static uint64_t r2n64_audio_tasks;
+ static void (*l_CheckInterrupts)(void) = NULL;
+ static void (*l_ProcessDlistList)(void) = NULL;
+ static void (*l_ProcessAlistList)(void) = NULL;
+@@ -102,8 +108,13 @@
+ {
+ }
+ 
+-void HleCheckInterrupts(void* UNUSED(user_defined))
+-{
++void HleCheckInterrupts(void* user_defined)
++{
++    if (user_defined == &r2n64_audio_rsp) {
++        if (r2n64_audio_rsp.CheckInterrupts)
++            r2n64_audio_rsp.CheckInterrupts();
++        return;
++    }
+     if (l_CheckInterrupts == NULL)
+         return;
+ 
+@@ -237,3 +248,69 @@
+         l_RomClosed();
+     }*/
+ }
++
++/* R2N64 extensions are exported alongside libretro and configured before ROM
++ * loading. Keeping the option across sessions lets each session reset its own
++ * synthesis buffers and statistics without changing the frontend preference. */
++EXPORT void retro_r2n64_set_audio_hle(int enabled)
++{
++    r2n64_audio_enabled = enabled != 0;
++}
++
++EXPORT uint64_t retro_r2n64_audio_hle_tasks(void)
++{
++    return r2n64_audio_tasks;
++}
++
++void r2n64AudioHleInitiateRSP(RSP_INFO Rsp_Info)
++{
++    memset(&r2n64_audio_hle, 0, sizeof(r2n64_audio_hle));
++    r2n64_audio_rsp = Rsp_Info;
++    r2n64_audio_tasks = 0;
++    r2n64_audio_ready = 0;
++    if (!Rsp_Info.RDRAM || !Rsp_Info.DMEM || !Rsp_Info.IMEM ||
++        Rsp_Info.DMEM == Rsp_Info.IMEM)
++        return;
++    hle_init(&r2n64_audio_hle,
++             Rsp_Info.RDRAM,
++             Rsp_Info.DMEM,
++             Rsp_Info.IMEM,
++             Rsp_Info.MI_INTR_REG,
++             Rsp_Info.SP_MEM_ADDR_REG,
++             Rsp_Info.SP_DRAM_ADDR_REG,
++             Rsp_Info.SP_RD_LEN_REG,
++             Rsp_Info.SP_WR_LEN_REG,
++             Rsp_Info.SP_STATUS_REG,
++             Rsp_Info.SP_DMA_FULL_REG,
++             Rsp_Info.SP_DMA_BUSY_REG,
++             Rsp_Info.SP_PC_REG,
++             Rsp_Info.SP_SEMAPHORE_REG,
++             Rsp_Info.DPC_START_REG,
++             Rsp_Info.DPC_END_REG,
++             Rsp_Info.DPC_CURRENT_REG,
++             Rsp_Info.DPC_STATUS_REG,
++             Rsp_Info.DPC_CLOCK_REG,
++             Rsp_Info.DPC_BUFBUSY_REG,
++             Rsp_Info.DPC_PIPEBUSY_REG,
++             Rsp_Info.DPC_TMEM_REG,
++             &r2n64_audio_rsp);
++    r2n64_audio_ready = 1;
++}
++
++int r2n64AudioHleTry(void)
++{
++    if (!r2n64_audio_enabled || !r2n64_audio_ready ||
++        (*r2n64_audio_hle.sp_status & (SP_STATUS_HALT | SP_STATUS_BROKE)))
++        return 0;
++    if (!hle_try_audio_task(&r2n64_audio_hle))
++        return 0;
++    ++r2n64_audio_tasks;
++    return 1;
++}
++
++void r2n64AudioHleClose(void)
++{
++    r2n64_audio_ready = 0;
++    memset(&r2n64_audio_hle, 0, sizeof(r2n64_audio_hle));
++    memset(&r2n64_audio_rsp, 0, sizeof(r2n64_audio_rsp));
++}
+--- a/mupen64plus-rsp-cxd4/module.c
++++ b/mupen64plus-rsp-cxd4/module.c
+@@ -75,6 +75,9 @@
+ }
+ 
+ extern void DebugMessage(int level, const char *message, ...);
++extern void r2n64AudioHleInitiateRSP(RSP_INFO info);
++extern int r2n64AudioHleTry(void);
++extern void r2n64AudioHleClose(void);
+ 
+ EXPORT u32 CALL API_PREFIX(DoRspCycles)(u32 cycles)
+ {
+@@ -86,6 +89,11 @@
+         message("SP_STATUS_HALT");
+         return 0x00000000;
+     }
++
++    /* Recognized audio gets the upstream HLE implementation. Graphics and
++     * unsupported audio continue through the unmodified CXD4 interpreter. */
++    if (r2n64AudioHleTry())
++        return cycles;
+ 
+     task_type = 0x00000000
+ #ifdef USE_CLIENT_ENDIAN
+@@ -235,6 +243,7 @@
+     update_conf(CFG_FILE);
+ 
+     RSP_INFO_NAME = Rsp_Info;
++    r2n64AudioHleInitiateRSP(Rsp_Info);
+     DRAM = GET_RSP_INFO(RDRAM);
+     if (Rsp_Info.DMEM == Rsp_Info.IMEM) /* usually dummy RSP data for testing */
+         return; /* DMA is not executed just because plugin initiates. */
+@@ -268,6 +277,7 @@
+ 
+ EXPORT void CALL API_PREFIX(RomClosed)(void)
+ {
++    r2n64AudioHleClose();
+     GET_RCP_REG(SP_PC_REG) = 0x04001000;
+ }
+ 

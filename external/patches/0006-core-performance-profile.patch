@@ -1,0 +1,333 @@
+--- a/Makefile.common
++++ b/Makefile.common
+@@ -232,6 +232,7 @@
+ 
+ # Libretro
+ SOURCES_C += $(LIBRETRO_DIR)/libretro.c \
++	$(LIBRETRO_DIR)/r2n64_profile.c \
+ 	$(LIBRETRO_COMM_DIR)/memmap/memalign.c \
+ 	$(ROOT_DIR)/custom/mupen64plus-core/plugin/emulate_game_controller_via_libretro.c \
+ 	$(LIBRETRO_COMM_DIR)/audio/resampler/drivers/sinc_resampler.c \
+--- a/libretro/libretro.c
++++ b/libretro/libretro.c
+@@ -41,6 +41,7 @@
+ #include "api/m64p_frontend.h"
+ #include "api/m64p_types.h"
+ #include "device/r4300/r4300_core.h"
++#include "r2n64_profile.h"
+ #include "device/r4300/new_dynarec/new_dynarec.h"
+ #include "device/memory/memory.h"
+ #include "main/main.h"
+@@ -2120,6 +2121,7 @@
+ 
+ void retro_run (void)
+ {
++    r2n64_profile_run_begin();
+     libretro_swap_buffer = false;
+     static bool updated = false;
+ 
+@@ -2174,6 +2176,7 @@
+         // screen_pitch will be 0 for GLN
+         video_cb(NULL, retro_screen_width, retro_screen_height, screen_pitch);
+     }
++    r2n64_profile_run_end();
+ }
+ 
+ void retro_reset (void)
+--- a/mupen64plus-core/src/device/rcp/rsp/rsp_core.c
++++ b/mupen64plus-core/src/device/rcp/rsp/rsp_core.c
+@@ -20,6 +20,7 @@
+  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ 
+ #include "rsp_core.h"
++#include "r2n64_profile.h"
+ 
+ #include <string.h>
+ 
+@@ -323,6 +324,13 @@
+         masked_write(&sp->regs2[reg], value, mask);
+ }
+ 
++static void r2n64_profile_rsp_dispatch(void)
++{
++    const uint64_t scope = r2n64_profile_enter(R2N64_PROFILE_RSP);
++    rsp.doRspCycles(0xffffffff);
++    r2n64_profile_leave(scope);
++}
++
+ void do_SP_Task(struct rsp_core* sp)
+ {
+     uint32_t save_pc = sp->regs2[SP_PC_REG] & ~0xfff;
+@@ -338,7 +346,7 @@
+ #if defined(PROFILE)
+         timed_section_start(TIMED_SECTION_GFX);
+ #endif
+-        rsp.doRspCycles(0xffffffff);
++        r2n64_profile_rsp_dispatch();
+ #if defined(PROFILE)
+         timed_section_end(TIMED_SECTION_GFX);
+ #endif
+@@ -366,7 +374,7 @@
+ #if defined(PROFILE)
+         timed_section_start(TIMED_SECTION_AUDIO);
+ #endif
+-        rsp.doRspCycles(0xffffffff);
++        r2n64_profile_rsp_dispatch();
+ #if defined(PROFILE)
+         timed_section_end(TIMED_SECTION_AUDIO);
+ #endif
+@@ -377,7 +385,7 @@
+     else
+     {
+         sp->regs2[SP_PC_REG] &= 0xfff;
+-        rsp.doRspCycles(0xffffffff);
++        r2n64_profile_rsp_dispatch();
+         sp->regs2[SP_PC_REG] |= save_pc;
+ 
+         sp_delay_time = 0;
+--- a/mupen64plus-video-angrylion/interface.c
++++ b/mupen64plus-video-angrylion/interface.c
+@@ -7,6 +7,7 @@
+ #include <boolean.h>
+ 
+ #include "mupen64plus-next_common.h"
++#include "r2n64_profile.h"
+ #include "m64p_plugin.h"
+ 
+ extern void DebugMessage(int level, const char *message, ...);
+@@ -316,7 +317,9 @@
+ 
+ void angrylionProcessRDPList(void)
+ {
++  const uint64_t scope = r2n64_profile_enter(R2N64_PROFILE_RDP);
+   n64video_process_list();
++  r2n64_profile_leave(scope);
+ }
+ 
+ void angrylionRomClosed (void)
+@@ -372,7 +375,9 @@
+         return;
+     counter = 0;
+ #endif
++    const uint64_t scope = r2n64_profile_enter(R2N64_PROFILE_SCANOUT);
+     n64video_update_screen();
++    r2n64_profile_leave(scope);
+     
+ }
+ 
+--- a/mupen64plus-rsp-hle/src/hle.c
++++ b/mupen64plus-rsp-hle/src/hle.c
+@@ -29,6 +29,7 @@
+ #endif
+ 
+ #include "hle_external.h"
++#include "r2n64_profile.h"
+ #include "hle_internal.h"
+ #include "memory.h"
+ #include "ucodes.h"
+@@ -170,7 +171,11 @@
+     if (handler == NULL || handler == alist_process_nead_mats ||
+         handler == alist_process_nead_efz)
+         return 0;
+-    handler(hle);
++    {
++        const uint64_t scope = r2n64_profile_enter(R2N64_PROFILE_AUDIO_HLE);
++        handler(hle);
++        r2n64_profile_leave(scope);
++    }
+     return 1;
+ }
+ 
+--- /dev/null
++++ b/libretro/core_profile.h
+@@ -0,0 +1,38 @@
++#ifndef R2N64_CORE_PROFILE_H
++#define R2N64_CORE_PROFILE_H
++#include <stdint.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++#define R2N64_CORE_PROFILE_ABI 1u
++/* Cumulative microseconds on the calling emulation thread. run_us is inclusive
++ * retro_run wall time, including its callbacks. Component times are exclusive:
++ * nested RDP/audio work is removed from RSP. RDP/scanout include worker waits,
++ * not the sum of worker CPU time. The unassigned remainder also contains core
++ * services, callbacks and profiler overhead; it is NOT a pure R4300 timer.
++ * Frontend idle/pause time between retro_run calls is never accumulated.
++ * Set/reset/read are called by the frontend on that same thread between runs.
++ * Disabled mode has zero counters and does not query the clock. */
++typedef struct R2N64CoreProfile {
++    uint32_t abi_version;
++    uint32_t struct_size;
++    uint64_t run_us, run_calls;
++    uint64_t rsp_us, rsp_calls;
++    uint64_t rdp_us, rdp_calls;
++    uint64_t scanout_us, scanout_calls;
++    uint64_t audio_hle_us, audio_hle_calls;
++    uint64_t timer_failures, dropped_scopes;
++} R2N64CoreProfile;
++
++/* Enabling/disabling starts a fresh measurement. reset preserves enablement.
++ * read accepts NULL as a no-op. ABI/size are populated even when disabled. */
++void retro_r2n64_profile_set_enabled(int enabled);
++void retro_r2n64_profile_reset(void);
++void retro_r2n64_profile_read(R2N64CoreProfile* snapshot);
++
++#ifdef __cplusplus
++}
++#endif
++#endif
+--- /dev/null
++++ b/libretro/r2n64_profile.h
+@@ -0,0 +1,17 @@
++#ifndef R2N64_PROFILE_INTERNAL_H
++#define R2N64_PROFILE_INTERNAL_H
++#include "core_profile.h"
++
++enum r2n64_profile_component {
++    R2N64_PROFILE_RSP,
++    R2N64_PROFILE_RDP,
++    R2N64_PROFILE_SCANOUT,
++    R2N64_PROFILE_AUDIO_HLE
++};
++
++/* All calls stay on the emulation/frontend thread, including libco switches. */
++void r2n64_profile_run_begin(void);
++void r2n64_profile_run_end(void);
++uint64_t r2n64_profile_enter(enum r2n64_profile_component component);
++void r2n64_profile_leave(uint64_t token);
++#endif
+--- /dev/null
++++ b/libretro/r2n64_profile.c
+@@ -0,0 +1,129 @@
++/* R2N64 coarse dispatch profiler. Disabled by default; no per-op timing. */
++#include "r2n64_profile.h"
++#include <libretro.h>
++#if defined(__PS4__)
++#include <orbis/libkernel.h>
++#else
++#include <features/features_cpu.h>
++#endif
++#include <string.h>
++
++#define PROFILE_STACK_CAPACITY 16u
++static R2N64CoreProfile result;
++static enum r2n64_profile_component stack[PROFILE_STACK_CAPACITY];
++static uint32_t generation = 1;
++static unsigned depth;
++static int enabled, running;
++static uint64_t last_tick, run_start, clock_floor;
++
++static uint64_t profile_now(void)
++{
++#if defined(__PS4__)
++    /* Native monotonic microseconds, matching upstream's ORBIS timer branch.
++     * PacBrew's POSIX CLOCK_MONOTONIC numeric ID cannot be assumed to match
++     * libkernel's exported clock_gettime ABI, so avoid that ID translation. */
++    const retro_time_t value = (retro_time_t)sceKernelGetProcessTime();
++#else
++    const retro_time_t value = cpu_features_get_time_usec();
++#endif
++    if (value <= 0 || (uint64_t)value < clock_floor) {
++        ++result.timer_failures;
++        return clock_floor;
++    }
++    clock_floor = (uint64_t)value;
++    return clock_floor;
++}
++
++static void charge(uint64_t now)
++{
++    const uint64_t elapsed = now >= last_tick ? now - last_tick : 0;
++    if (running && depth) {
++        switch (stack[depth - 1]) {
++        case R2N64_PROFILE_RSP: result.rsp_us += elapsed; break;
++        case R2N64_PROFILE_RDP: result.rdp_us += elapsed; break;
++        case R2N64_PROFILE_SCANOUT: result.scanout_us += elapsed; break;
++        case R2N64_PROFILE_AUDIO_HLE: result.audio_hle_us += elapsed; break;
++        }
++    }
++    last_tick = now;
++}
++
++RETRO_API void retro_r2n64_profile_reset(void)
++{
++    memset(&result, 0, sizeof(result));
++    result.abi_version = R2N64_CORE_PROFILE_ABI;
++    result.struct_size = sizeof(result);
++    depth = 0;
++    running = 0;
++    run_start = last_tick = clock_floor = 0;
++    if (++generation == 0) generation = 1;
++}
++
++RETRO_API void retro_r2n64_profile_set_enabled(int value)
++{
++    enabled = value != 0;
++    retro_r2n64_profile_reset();
++}
++
++RETRO_API void retro_r2n64_profile_read(R2N64CoreProfile* snapshot)
++{
++    if (!snapshot) return;
++    *snapshot = result;
++    snapshot->abi_version = R2N64_CORE_PROFILE_ABI;
++    snapshot->struct_size = sizeof(*snapshot);
++}
++
++void r2n64_profile_run_begin(void)
++{
++    uint64_t failures;
++    if (!enabled) return;
++    failures = result.timer_failures;
++    run_start = last_tick = profile_now();
++    /* Never use an earlier run's clock floor as the opening timestamp: that
++     * would charge the intervening frontend pause when this read fails. */
++    running = run_start != 0 && result.timer_failures == failures;
++}
++
++void r2n64_profile_run_end(void)
++{
++    uint64_t now;
++    if (!enabled || !running) return;
++    now = profile_now();
++    charge(now);
++    result.run_us += now - run_start;
++    ++result.run_calls;
++    running = 0;
++    /* Keep an enclosing scope suspended across libco yield. Its next charged
++     * interval starts at run_begin, so all external idle time is excluded. */
++}
++
++uint64_t r2n64_profile_enter(enum r2n64_profile_component component)
++{
++    uint64_t now;
++    if (!enabled || !running) return 0;
++    if (depth == PROFILE_STACK_CAPACITY || component > R2N64_PROFILE_AUDIO_HLE) {
++        ++result.dropped_scopes;
++        return 0;
++    }
++    now = profile_now();
++    charge(now);
++    stack[depth++] = component;
++    switch (component) {
++    case R2N64_PROFILE_RSP: ++result.rsp_calls; break;
++    case R2N64_PROFILE_RDP: ++result.rdp_calls; break;
++    case R2N64_PROFILE_SCANOUT: ++result.scanout_calls; break;
++    case R2N64_PROFILE_AUDIO_HLE: ++result.audio_hle_calls; break;
++    }
++    return ((uint64_t)generation << 32) | depth;
++}
++
++void r2n64_profile_leave(uint64_t token)
++{
++    if (!token || !enabled || (uint32_t)(token >> 32) != generation) return;
++    if (!depth || (uint32_t)token != depth) {
++        ++result.dropped_scopes;
++        return;
++    }
++    if (running) charge(profile_now());
++    --depth;
++}

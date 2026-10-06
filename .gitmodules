@@ -1,0 +1,15 @@
+[submodule "external/mupen64plus-next"]
+	path = external/mupen64plus-next
+	url = https://github.com/libretro/mupen64plus-libretro-nx.git
+[submodule "external/sameboy"]
+	path = external/sameboy
+	url = https://github.com/LIJI32/SameBoy.git
+[submodule "external/mgba"]
+	path = external/mgba
+	url = https://github.com/mgba-emu/mgba.git
+[submodule "external/fceumm"]
+	path = external/fceumm
+	url = https://github.com/libretro/libretro-fceumm.git
+[submodule "external/bsnes-mercury"]
+	path = external/bsnes-mercury
+	url = https://github.com/libretro/bsnes-mercury.git

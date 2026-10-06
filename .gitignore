@@ -1,0 +1,20 @@
+/build/
+/dist/
+/runtime/
+*.pkg
+*.elf
+*.oelf
+*.bin
+__pycache__/
+
+# Local data and credentials must not enter release sources.
+.env
+.env.*
+!.env.example
+*.pem.key
+*.p12
+*.pfx
+*.srm
+*.sav
+*.state
+*.log

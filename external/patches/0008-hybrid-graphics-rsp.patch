@@ -1,0 +1,137 @@
+--- a/mupen64plus-rsp-hle/src/plugin.c
++++ b/mupen64plus-rsp-hle/src/plugin.c
+@@ -29,6 +29,7 @@
+ #include "hle.h"
+ #include "hle_internal.h"
+ #include "hle_external.h"
++#include "memory.h"
+ 
+ #define M64P_PLUGIN_PROTOTYPES 1
+ #include "m64p_common.h"
+@@ -46,6 +47,15 @@
+ 
+ /* local variables */
+ static struct hle_t g_hle;
++/* Hybrid graphics HLE: audio/unknown tasks retain the existing CXD4 path. */
++extern unsigned int CALL cxd4DoRspCycles(unsigned int cycles);
++extern void CALL cxd4InitiateRSP(RSP_INFO info, unsigned int* cycles);
++extern void CALL cxd4RomClosed(void);
++extern int gln64R2KnownGraphicsTask(unsigned int code, unsigned int data);
++static int r2n64_hybrid_ready;
++static uint64_t r2n64_gfx_hle_tasks, r2n64_gfx_lle_tasks;
++EXPORT uint64_t retro_r2n64_graphics_hle_tasks(void) { return r2n64_gfx_hle_tasks; }
++EXPORT uint64_t retro_r2n64_graphics_lle_tasks(void) { return r2n64_gfx_lle_tasks; }
+ /* This state belongs to the audio-only CXD4 bridge, not the full HLE plugin. */
+ static struct hle_t r2n64_audio_hle;
+ static RSP_INFO r2n64_audio_rsp;
+@@ -190,12 +200,47 @@
+ 
+ EXPORT unsigned int CALL hleDoRspCycles(unsigned int Cycles)
+ {
+-    hle_execute(&g_hle);
+-    return Cycles;
++    uint32_t code, data, list, bytes;
++    int graphics;
++    if (!r2n64_hybrid_ready) return 0;
++    if (*g_hle.sp_status & (SP_STATUS_HALT | SP_STATUS_BROKE)) return 0;
++    graphics = *dmem_u32(&g_hle, TASK_TYPE) == 1;
++    code = *dmem_u32(&g_hle, TASK_UCODE) & 0x1fffffff;
++    data = *dmem_u32(&g_hle, TASK_UCODE_DATA) & 0x1fffffff;
++    list = *dmem_u32(&g_hle, TASK_DATA_PTR) & 0x1fffffff;
++    bytes = *dmem_u32(&g_hle, TASK_DATA_SIZE);
++    /* Inspect without changing guest state. Resume/yielded tasks and all
++     * unrecognized graphics remain LLE. No address-only microcode cache. */
++    if (graphics && (*g_hle.sp_pc & 0xfff) == 0 &&
++        *dmem_u32(&g_hle, TASK_UCODE_BOOT_SIZE) <= 0x1000 &&
++        code <= 0x800000 - 4096 && data <= 0x800000 - 2048 &&
++        list && !(list & 7) && list < 0x800000 && !(bytes & 7) &&
++        bytes <= 0x800000 - list && l_ProcessDlistList &&
++        gln64R2KnownGraphicsTask(code, data)) {
++        /* Same interrupt/status protocol as upstream graphics HLE, without
++         * running its unrelated audio/JPEG handlers or growing task cache. */
++        *g_hle.dpc_status &= ~2u;
++        *g_hle.sp_status |= SP_STATUS_TASKDONE | SP_STATUS_BROKE | SP_STATUS_HALT;
++        l_ProcessDlistList();
++        if ((*g_hle.sp_status & SP_STATUS_INTR_ON_BREAK) &&
++            (*g_hle.sp_status & (SP_STATUS_TASKDONE | SP_STATUS_BROKE | SP_STATUS_HALT))) {
++            *g_hle.mi_intr |= MI_INTR_SP;
++            HleCheckInterrupts(NULL);
++        }
++        ++r2n64_gfx_hle_tasks;
++        return Cycles;
++    }
++    if (graphics) ++r2n64_gfx_lle_tasks;
++    return cxd4DoRspCycles(Cycles);
+ }
+ 
+ EXPORT void CALL hleInitiateRSP(RSP_INFO Rsp_Info, unsigned int* CycleCount)
+ {
++    r2n64_hybrid_ready = 0;
++    memset(&g_hle, 0, sizeof(g_hle));
++    cxd4InitiateRSP(Rsp_Info, CycleCount);
++    if (!Rsp_Info.RDRAM || !Rsp_Info.DMEM || !Rsp_Info.IMEM ||
++        Rsp_Info.DMEM == Rsp_Info.IMEM) return;
+     hle_init(&g_hle,
+              Rsp_Info.RDRAM,
+              Rsp_Info.DMEM,
+@@ -230,6 +275,7 @@
+     m64p_rom_header rom_header;
+     CoreDoCommand(M64CMD_ROM_GET_HEADER, sizeof(rom_header), &rom_header);
+ 
++    r2n64_hybrid_ready = 1;
+     g_hle.hle_gfx = 1;
+     g_hle.hle_aud = 0;
+     
+@@ -241,7 +287,9 @@
+ 
+ EXPORT void CALL hleRomClosed(void)
+ {
+-     g_hle.cached_ucodes.count = 0;
++     if (r2n64_hybrid_ready) cxd4RomClosed();
++     r2n64_hybrid_ready = 0;
++     memset(&g_hle, 0, sizeof(g_hle));
+      
+     /* notify fallback plugin */
+     /*if (l_RomClosed) {
+@@ -267,6 +315,7 @@
+     memset(&r2n64_audio_hle, 0, sizeof(r2n64_audio_hle));
+     r2n64_audio_rsp = Rsp_Info;
+     r2n64_audio_tasks = 0;
++    r2n64_gfx_hle_tasks = r2n64_gfx_lle_tasks = 0;
+     r2n64_audio_ready = 0;
+     if (!Rsp_Info.RDRAM || !Rsp_Info.DMEM || !Rsp_Info.IMEM ||
+         Rsp_Info.DMEM == Rsp_Info.IMEM)
+--- a/GLideN64/src/GBI.cpp
++++ b/GLideN64/src/GBI.cpp
+@@ -97,6 +97,31 @@
+     { F3D,          false,  true,   false,  true,   0xe62a706d }, // Fast3D
+     { F3D,          false,  true,   false,  false,  0xfff0637d }, // Caribbean Nights
+ };
++
++// Conservative, read-only admission before the hybrid RSP changes SP state.
++// Unknown/custom text signatures retain CXD4. Never infer support from a ROM title.
++extern "C" int gln64R2KnownGraphicsTask(unsigned int code, unsigned int data)
++{
++    if (!RDRAM || code > 0x800000 - 4096 || data > 0x800000 - 2048)
++        return 0;
++    const u32 crc = CRC_Calculate_Strict(0xFFFFFFFF, &RDRAM[code], 4096);
++    for (const auto& info : specialMicrocodes)
++        if (info.crc == crc) return 1;
++    char text[2048];
++    UnswapCopyWrap(RDRAM, data, (u8*)text, 0, 0x7FF, sizeof(text));
++    for (size_t i = 0; i + 3 < sizeof(text); ++i) {
++        if (memcmp(text + i, "RSP", 3) != 0) continue;
++        size_t n = 0;
++        while (i + n < sizeof(text) && n < 255 &&
++               static_cast<unsigned char>(text[i+n]) > 10) ++n;
++        // This first text-only profile covers the Zelda OoT F3DZEX family
++        // recognized by the parser below. Other families require validation.
++        return i+n < sizeof(text) && n >= 35 && n < 255 &&
++               memcmp(text+i+4, "Gfx", 3) == 0 &&
++               memcmp(text+i+14, "F3DZEX", 6) == 0 && text[i+34] == '6';
++    }
++    return 0;
++}
+ 
+ u32 G_RDPHALF_1, G_RDPHALF_2, G_RDPHALF_CONT;
+ u32 G_SPNOOP;
