@@ -172,6 +172,10 @@ En Windows: `scripts\build.bat test` o `scripts\build.bat`, usando WSL Ubuntu-24
 
 [Hoja de ruta y criterios de cierre](docs/ROADMAP.md) · [Estado e historial técnico](docs/STATUS.md)
 
+## ☕ Apoya el proyecto
+
+[**Invítame un Café**](https://ko-fi.com/rtwo_) **para seguir peleando con los bugs… 🐛💻 porque al parecer ellos no duermen y yo tampoco 😂🔥**
+
 ## Licencia y descargo de responsabilidad
 
 El código propio de **R2RETRO** se publica bajo la **licencia GPL-3.0 o posterior**. Consulta [LICENCIA](LICENSE). Los núcleos, bibliotecas y demás componentes de terceros conservan sus respectivas licencias y avisos; esta licencia no se extiende automáticamente a imágenes, fuentes ni marcas.
