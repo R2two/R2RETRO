@@ -1,19 +1,25 @@
 # Canales de actualización
 
-R2RETRO v0.5.3 consulta `updates/experimental.txt` o `updates/stable.txt`
+R2RETRO desde v0.5.3 consulta `updates/experimental.txt` o `updates/stable.txt`
 en la rama `main` de `R2two/R2RETRO` mediante HTTPS. No interpreta commits,
 el README ni una etiqueta como una actualización instalable.
 
 Los punteros de canal se publican **después** del PKG y de verificar su descarga.
-Todavía no se ha publicado ninguno como parte de este cambio local. Un HTTP 404
-se presenta como un canal que aún no tiene manifiesto; no bloquea los juegos.
+El canal experimental anuncia **v0.5.5**: PKG público descargado y verificado
+por tamaño, SHA-256, identidad y SFO con el validador del cliente. El canal
+estable sigue sin publicar. Un HTTP 404 se presenta como un canal que aún
+no tiene manifiesto; no bloquea los juegos.
 No añadir archivos de ejemplo llamados `stable.txt` o `experimental.txt`.
 
 `scripts/package.py` genera, tras validar y extraer el paquete:
 
-- `dist/R2RETRO-v0.5.3-updater.pkg`
-- Su archivo `.sha256` y `build-info-v0.5.3.json`.
-- `dist/update-v0.5.3-experimental.txt`, **preparado pero no publicado**.
+- `dist/R2RETRO-v0.5.5-display-network.pkg`
+- Su archivo `.sha256` y `build-info-v0.5.5.json`.
+- `dist/update-v0.5.5-experimental.txt`, copiado al canal tras validar la descarga.
+
+[Release v0.5.5](https://github.com/R2two/R2RETRO/releases/tag/v0.5.5).
+La publicación y validación del paquete no confirman la instalación sobre
+sí misma en una PS4 física; esa prueba continúa pendiente.
 
 En futuras solicitudes de «empaquetar y publicar»:
 

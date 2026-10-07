@@ -1,0 +1,10 @@
+R2RETRO-UPDATE-1
+version=0.5.5
+sfo=00.55
+channel=experimental
+url=https://github.com/R2two/R2RETRO/releases/download/v0.5.5/R2RETRO-v0.5.5-display-network.pkg
+sha256=1f6fef9555d84a13baba7f91c48b7bb09d6c5782b9cbb80ac174fadea6bbf6c9
+size=65994752
+notes=Cloudflare fijo para actualizaciones y Libretro; logos revisados; shaders LCD/CRT, guardado SRAM/RTC en pausa y frameskip GBA opcionales. Experimental: prueba PS4 pendiente.
+title_id=RNTD00064
+content_id=IV0001-RNTD00064_00-R2N64APP00000001
