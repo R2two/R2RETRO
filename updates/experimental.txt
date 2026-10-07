@@ -1,10 +1,10 @@
 R2RETRO-UPDATE-1
-version=0.5.5
-sfo=00.55
+version=0.5.6
+sfo=00.56
 channel=experimental
-url=https://github.com/R2two/R2RETRO/releases/download/v0.5.5/R2RETRO-v0.5.5-display-network.pkg
-sha256=1f6fef9555d84a13baba7f91c48b7bb09d6c5782b9cbb80ac174fadea6bbf6c9
+url=https://github.com/R2two/R2RETRO/releases/download/v0.5.6/R2RETRO-v0.5.6-color-stability.pkg
+sha256=1d0b3f1ae2580fc9ee0218606206da0bc53e3029e481535038393e1d607172be
 size=65994752
-notes=Cloudflare fijo para actualizaciones y Libretro; logos revisados; shaders LCD/CRT, guardado SRAM/RTC en pausa y frameskip GBA opcionales. Experimental: prueba PS4 pendiente.
+notes=Color GB opcional, ajustes NES/SNES, menos cargas de textura, corrección de ruta del instalador y Acerca de con Ko-fi. Experimental: primera instalación manual; validación PS4 pendiente.
 title_id=RNTD00064
 content_id=IV0001-RNTD00064_00-R2N64APP00000001

@@ -2,6 +2,12 @@
 
 ## v0.5.6 — paquete Color GB y estabilidad
 
+Publicada como pre-release https://github.com/R2two/R2RETRO/releases/tag/v0.5.6,
+código `59eee454bc2935c40f58ffee1a7d881637ae8995`. PKG, suma y build-info
+descargados públicamente por HTTPS y comparados byte a byte mediante SHA256;
+el validador del cliente comprueba el PKG remoto. Canal experimental actualizado
+después de esa verificación (`build/v056-public-verify.log`).
+
 Compilación y publicación autorizadas por el usuario. Compilaciones desktop y
 PS4 terminadas; 52/52 CTest aprobados en una pasada (125,80 s). Adaptador PS4
 simulado y validador/worker nativo/backend PS4 pasan ASan/UBSan. PKG extraído y
