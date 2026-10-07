@@ -132,7 +132,7 @@ constexpr size_t MaxStateBytes = 64 * 1024 * 1024;
 constexpr size_t StateHeaderSize = 192;
 constexpr size_t MaxSaveBytes = 16 * 1024 * 1024;
 constexpr size_t MaxAudioSamples = 44100 * 2; // Bounded even for a misbehaving core.
-constexpr std::array<const char*, GameBoyPaletteCount> GameBoyPalettes{{"greyscale", "lime", "olive", "teal"}};
+constexpr std::array<const char*, GameBoyPaletteCount> GameBoyPalettes{{"greyscale", "lime", "olive", "teal", "r2retro_color"}};
 
 bool readExact(int fd, void* destination, size_t size) {
     auto* bytes = static_cast<unsigned char*>(destination);
@@ -270,6 +270,7 @@ struct LibretroCore::State {
     std::string systemDirectory, saveDirectory, savePath, failure, lastCoreError;
     std::map<std::string, std::string> options;
     CoreFrame frame;
+    uint64_t videoSerial = 0; // Survives reset/state load within this core object.
     std::vector<int16_t> audio;
     size_t audioSamplesReceived = 0;
     std::array<uint64_t, 4> routineDmaMessages{};
@@ -459,6 +460,8 @@ struct LibretroCore::State {
             s.frame.hardware = true;
             s.frame.bottomLeftOrigin = s.hardwareCallback.bottom_left_origin;
             s.frame.width = width; s.frame.height = height;
+            if (!++s.videoSerial) ++s.videoSerial;
+            s.frame.serial = s.videoSerial;
             return;
         }
         if (s.gpu() || !s.acceptedPixelFormat ||
@@ -485,6 +488,8 @@ struct LibretroCore::State {
             }
             s.frame.width = width;
             s.frame.height = height;
+            if (!++s.videoSerial) ++s.videoSerial;
+            s.frame.serial = s.videoSerial;
         } catch (...) { s.fail("No hay memoria suficiente para el cuadro de video."); }
     }
     static void poll() {} // Platform already took one coherent snapshot before retro_run.
@@ -774,10 +779,24 @@ bool LibretroCore::load(const std::string& romPath, const std::string& dataRoot,
     };
     else if (s.system == SystemType::GameBoy || s.system == SystemType::GameBoyColor)
         s.options = {{"sameboy_model", "Auto"}, {"sameboy_border", "never"}};
+    else if (s.system == SystemType::NintendoEntertainmentSystem) {
+        // Keep original timing and sprite restrictions explicit rather than
+        // inheriting a changed upstream default when the core is updated.
+        s.options = {{"fceumm_region", "Auto"}, {"fceumm_nospritelimit", "disabled"},
+                     {"fceumm_overclocking", "disabled"}, {"fceumm_game_genie", "disabled"}};
+        // The isolated memory loader deliberately hides the on-disk name.
+        // FCEUmm's iNES1 path normally guesses PAL from that name; honor the
+        // unambiguous legacy PAL bit instead. NES2 owns its own timing field.
+        const bool cleanPal = s.rom.size()>=16 && (s.rom[7]&0x0c)==0 && s.rom[9]==1 &&
+            std::all_of(s.rom.begin()+10,s.rom.begin()+16,[](uint8_t b){return b==0;});
+        if(cleanPal) s.options["fceumm_region"]="PAL";
+        log.write("INFO","NES region: "+s.options["fceumm_region"]+
+                  (cleanPal ? " (clean iNES PAL header)" : " (core detection)"));
+    }
     else if (s.system == SystemType::SuperNintendo)
         s.options = {{"bsnes_violate_accuracy", "enabled"}, {"bsnes_chip_hle", "HLE"},
                      {"bsnes_superfx_overclock", "100%"}, {"bsnes_gamma_ramp", "disabled"},
-                     {"bsnes_crop_overscan", "disabled"}};
+                     {"bsnes_crop_overscan", "disabled"}, {"bsnes_region", "auto"}};
     if (s.system == SystemType::GameBoy) s.options["sameboy_mono_palette"] = GameBoyPalettes[config.gbPalette];
     if (s.gpu()) {
         s.options["mupen64plus-43screensize"] = "320x240";

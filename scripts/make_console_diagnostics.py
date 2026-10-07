@@ -50,7 +50,7 @@ class Code:
         return self.data
 
 
-def nes(mmc3=False):
+def nes(mmc3=False, pal=False):
     # MMC3 executes from its fixed final 8 KiB bank; switching PRG cannot replace
     # our program. Its 256 KiB PRG/128 KiB CHR sizes exercise high bank bits too.
     p = Code(0xe000 if mmc3 else 0x8000)
@@ -70,6 +70,10 @@ def nes(mmc3=False):
         p.label(f'warm{phase}')
         p.absolute(0x2c,0x2002)  # BIT PPUSTATUS
         p.branch(0x10,f'warm{phase}')
+    # Actual CPU RAM alias readbacks, separate from MMC3's status bytes.
+    p.store(0x0345,0x5a)
+    for slot,address in enumerate((0x0b45,0x1345,0x1b45)):
+        p.absolute(0xad,address); p.absolute(0x8d,0x6010+slot)
     if mmc3:
         # Test CHR banking with and without the pattern-table inversion bit.
         for mode,bank,address,result in ((0,8,0,12), (0x80,14,0x1000,13)):
@@ -152,7 +156,7 @@ def nes(mmc3=False):
             for tile in range(1,5):
                 chr_rom[start+tile*16:start+tile*16+8] = bytes([255 if tile&1 else 0])*8
                 chr_rom[start+tile*16+8:start+tile*16+16] = bytes([255 if tile&2 else 0])*8
-        return b'NES\x1a'+bytes([16,16,0x43,0,1,0,0,0,0,0,0,0])+prg+chr_rom
+        return b'NES\x1a'+bytes([16,16,0x43,0,1,int(pal),0,0,0,0,0,0])+prg+chr_rom
     prg = bytearray([0xea])*32768
     prg[:len(program)] = program
     struct.pack_into('<3H',prg,0x7ffa,p.labels['interrupt'],0x8000,p.labels['interrupt'])
@@ -160,7 +164,7 @@ def nes(mmc3=False):
     for tile in range(4):
         chr_rom[tile*16:tile*16+8] = bytes([255 if tile&1 else 0])*8
         chr_rom[tile*16+8:tile*16+16] = bytes([255 if tile&2 else 0])*8
-    return b'NES\x1a'+bytes([2,1,2,0,1,0,0,0,0,0,0,0])+prg+chr_rom
+    return b'NES\x1a'+bytes([2,1,2,0,1,int(pal),0,0,0,0,0,0])+prg+chr_rom
 
 
 def spc_payload():
@@ -177,7 +181,7 @@ def spc_payload():
     return payload
 
 
-def snes():
+def snes(pal=False):
     p = Code()
     p.emit(0x78,0xd8,0x18,0xfb,0xc2,0x10,0xa2,0xff,0x1f,0x9a)  # Native, A8/X16
     for address,value in ((0x4200,0),(0x420c,0),(0x2100,0x80),
@@ -196,6 +200,34 @@ def snes():
     p.label('apu-ack'); p.absolute(0xec,0x2140); p.branch(0xd0,'apu-ack')
     p.emit(0xe8,0xe0,192); p.branch(0xd0,'apu-copy')
     p.store(0x2142,0x40); p.store(0x2143,2); p.store(0x2141,0); p.store(0x2140,193)
+    # Real DMA from ROM to WRAM via $2180, followed by CPU readback. The data
+    # is also our original 4bpp checker tile; no commercial graphics involved.
+    for address,value in ((0x2181,0),(0x2182,0x1f),(0x2183,0),
+                          (0x4300,0),(0x4301,0x80),(0x4302,0),(0x4303,0x89),
+                          (0x4304,0),(0x4305,4),(0x4306,0),(0x420b,1)):
+        p.store(address,value)
+    for i in range(4):
+        p.emit(0xaf,i,0x1f,0x7e,0x8f,8+i,0,0x70)
+    p.store(0x0345,0x5a)
+    p.emit(0xaf,0x45,3,0x7e,0x8f,12,0,0x70)
+    p.emit(0xa9,0xa5,0x8f,0x46,3,0x7e)
+    p.absolute(0xad,0x0346); p.emit(0x8f,13,0,0x70)
+    # Forced blank stays enabled while DMA writes a tile and the CPU clears
+    # the full BG1 tilemap. Do not rely on emulator-initialized VRAM contents.
+    for address,value in ((0x2115,0x80),(0x2116,0),(0x2117,0),
+                          (0x4300,1),(0x4301,0x18),(0x4302,0),(0x4303,0x89),
+                          (0x4305,32),(0x4306,0),(0x420b,1),
+                          (0x2116,0),(0x2117,4)):
+        p.store(address,value)
+    p.emit(0xc2,0x10,0xa2,0,4,0xa9,0)  # X16, 1024 tilemap words
+    p.label('tilemap')
+    p.absolute(0x8d,0x2118); p.absolute(0x8d,0x2119)
+    p.emit(0xca); p.branch(0xd0,'tilemap')
+    p.store(0x2121,1)
+    for byte in (0x1f,0,0xe0,3): p.store(0x2122,byte)
+    for address,value in ((0x2105,1),(0x2107,4),(0x210b,0),
+                          (0x210d,0),(0x210d,0),(0x210e,0),(0x210e,0),(0x212c,1)):
+        p.store(address,value)
     for i,value in enumerate(b'R2SN'):
         p.emit(0xa9,value,0x8f,i,0,0x70)  # long SRAM bank70
     p.emit(0xaf,4,0,0x70,0x1a,0x8f,4,0,0x70)
@@ -205,6 +237,9 @@ def snes():
     p.store(0x2100,0x0f)
     p.label('visible'); p.absolute(0xad,0x4212); p.branch(0x30,'visible')
     p.label('vblank'); p.absolute(0xad,0x4212); p.branch(0x10,'vblank')
+    # VBlank can begin before auto-read sets busy. Observe its start AND end,
+    # otherwise the diagnostic can read the previous controller report.
+    p.label('joy-start'); p.absolute(0xad,0x4212); p.emit(0x29,1); p.branch(0xf0,'joy-start')
     p.label('joy-busy'); p.absolute(0xad,0x4212); p.emit(0x29,1); p.branch(0xd0,'joy-busy')
     p.emit(0xaf,5,0,0x70,0x1a,0x8f,5,0,0x70)
     p.absolute(0xad,0x4219); p.emit(0x8f,6,0,0x70)
@@ -219,8 +254,9 @@ def snes():
     rom = bytearray([0xea])*32768
     rom[:len(program)] = program
     rom[0x800:0x800+192] = spc_payload()
+    rom[0x900:0x920] = bytes([0xaa,0x55]*8 + [0]*16)
     rom[0x7fc0:0x7fd5] = b'R2N64 SNES DIAGNOSTIC'
-    rom[0x7fd5:0x7fdc] = bytes([0x20,0x02,5,3,1,0x33,0])  # LoROM RAM battery8K NTSC
+    rom[0x7fd5:0x7fdc] = bytes([0x20,0x02,5,3,2 if pal else 1,0x33,0])  # LoROM battery8K
     rom[0x7fdc:0x7fe0] = bytes(4)
     for vector in range(0x7fe0,0x8000,2): struct.pack_into('<H',rom,vector,p.labels['interrupt'])
     struct.pack_into('<H',rom,0x7ffc,0x8000)
@@ -237,6 +273,9 @@ def main():
     args.output.mkdir(parents=True,exist_ok=True)
     files = {'diagnostic.nes':nes(),'diagnostic-mmc3.nes':nes(mmc3=True),'diagnostic.sfc':snes()}
     files['diagnostic.smc'] = bytes(512)+files['diagnostic.sfc']
+    files.update({'diagnostic-pal.nes':nes(pal=True),
+                  'diagnostic-mmc3-pal.nes':nes(mmc3=True,pal=True),
+                  'diagnostic-pal.sfc':snes(pal=True)})
     manifest = {}
     for name,content in files.items():
         (args.output/name).write_bytes(content)

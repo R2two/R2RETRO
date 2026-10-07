@@ -21,6 +21,8 @@ static bool failPngWrite = false;
 static std::string lastOverlayPath;
 static Uint32 lastStreamingFormat = SDL_PIXELFORMAT_UNKNOWN;
 static unsigned memoryImageLoads = 0;
+static unsigned gameUploads = 0;
+static bool failGameUpload = false;
 constexpr uint32_t overlayColor = 0x284871;
 extern "C" int __real_IMG_SavePNG_RW(SDL_Surface*, SDL_RWops*, int);
 extern "C" int __wrap_IMG_SavePNG_RW(SDL_Surface* surface, SDL_RWops* writer, int freeWriter) {
@@ -42,6 +44,10 @@ extern "C" int __wrap_SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* re
     Uint32 format = 0;
     int access = 0, width = 0, height = 0;
     SDL_QueryTexture(texture,&format,&access,&width,&height);
+    if (access == SDL_TEXTUREACCESS_STREAMING) {
+        ++gameUploads;
+        if (failGameUpload) return SDL_SetError("Synthetic game upload failure");
+    }
     if (access == SDL_TEXTUREACCESS_STATIC && format == SDL_PIXELFORMAT_RGB888 && width == 1920 && height == 1080) {
         ++overlayUploads;
         if (failOverlayUpload) return SDL_SetError("Synthetic overlay upload failure");
@@ -268,6 +274,42 @@ int main(int argc, char** argv) {
         require(video.gameFrame(stripes.data(),160,144,error,true,true,true), error);
         require(textureCreates == stableCreates + 1 && filterChanges == nearestFilters + 3, "Recreated texture inherited stale filter cache");
         require(video.present(error), error);
+
+        // Paused/duplicate frames recompose without retransferring pixels. The
+        // same caller buffer can change; it is the explicit flag, not pointer
+        // equality, that determines whether a new image must be uploaded.
+        {
+            video.releaseGameFrame();
+            auto original = stripes;
+            const auto beforeUploads = gameUploads;
+            require(video.gameFrame(original.data(),160,144,error,true,false,true,SystemType::GameBoy,false),error);
+            require(gameUploads == beforeUploads + 1, "First duplicate request must initialize the texture");
+            require(capture(video,directory / "reuse-initial.png") == nearest, "Initial reusable texture is not the source image");
+            std::fill(original.begin(),original.end(),0x20ff20);
+            for (unsigned repeat = 0; repeat < 4; ++repeat)
+                require(video.gameFrame(original.data(),160,144,error,true,false,true,SystemType::GameBoy,false),error);
+            require(gameUploads == beforeUploads + 1, "Repeated image uploaded again");
+            require(capture(video,directory / "reuse-paused.png") == nearest, "Duplicate image changed the cached texture");
+            require(video.gameFrame(original.data(),160,144,error,true,true,true,SystemType::GameBoy,false),error);
+            require(gameUploads == beforeUploads + 1 && capture(video,directory / "reuse-filter.png") == linear,
+                    "Filter change must affect cached pixels without uploading");
+            failGameUpload = true;
+            require(!video.gameFrame(original.data(),160,144,error,true,false,true,SystemType::GameBoy,true),
+                    "Failed new image upload reported success");
+            failGameUpload = false;
+            const auto afterFailure = gameUploads;
+            require(video.gameFrame(original.data(),160,144,error,true,false,true,SystemType::GameBoy,false),error);
+            require(gameUploads == afterFailure + 1, "Failed upload incorrectly marked texture initialized");
+            const auto green = capture(video,directory / "reuse-new-pixels.png");
+            require(green != nearest && green[540 * 1920 + 960] == 0x20ff20, "New pixels were not transferred");
+            std::vector<uint32_t> resized(240 * 160,0xffffff);
+            require(video.gameFrame(resized.data(),240,160,error,true,false,true,SystemType::GameBoyAdvance,false),error);
+            require(gameUploads == afterFailure + 2, "Resize reused obsolete texture pixels");
+            verifyBounds(capture(video,directory / "reuse-resized.png"),{240,60,1440,960});
+            video.releaseGameFrame();
+            require(video.gameFrame(original.data(),160,144,error,true,false,true,SystemType::GameBoy,false),error);
+            require(gameUploads == afterFailure + 3, "New session did not initialize its texture");
+        }
 
         const unsigned initialOverlayLoads = overlayLoads, initialOverlayTextures = overlayTextureCreates;
         failOverlayLoad = true;

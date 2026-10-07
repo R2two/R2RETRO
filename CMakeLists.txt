@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
-project(R2RETRO VERSION 0.5.5 LANGUAGES C CXX)
-add_compile_definitions(R2N64_SFO_VERSION="00.55")
+project(R2RETRO VERSION 0.5.6 LANGUAGES C CXX)
+add_compile_definitions(R2N64_SFO_VERSION="00.56")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -317,7 +317,7 @@ else()
     target_compile_options(console_tests PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME console_core_sessions COMMAND console_tests
         "${CMAKE_BINARY_DIR}/console-fixtures" "${CMAKE_BINARY_DIR}/console-tests")
-    set_tests_properties(console_core_sessions PROPERTIES FIXTURES_REQUIRED console_roms TIMEOUT 120)
+    set_tests_properties(console_core_sessions PROPERTIES FIXTURES_REQUIRED console_roms TIMEOUT 240)
     add_test(NAME console_app_preferences_speed COMMAND ${Python3_EXECUTABLE}
         "${CMAKE_SOURCE_DIR}/tests/console_app_smoke.py" "$<TARGET_FILE:r2n64>"
         "${CMAKE_BINARY_DIR}/console-fixtures" "${CMAKE_BINARY_DIR}/console-app-tests")

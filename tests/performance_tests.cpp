@@ -16,6 +16,16 @@ int main() {
         near(ntsc.intervalsPerSecond(), 60, "normal NTSC interval frequency");
         near(ntsc.averageCoreMs(), 8, "core cost excludes presentation and pacing");
         near(ntsc.averagePresentMs(), 2, "presentation cost is separate");
+        r2n64::EmulationPerformance skipping;
+        for (unsigned i = 0; i < 60; ++i) skipping.add(1000.0 / 60.0,60,8,2,1,i % 3 == 0 ? 1 : 0);
+        near(skipping.speedPercent(),100,"frameskip must not lower emulation speed accounting");
+        near(skipping.imagesPerSecond(),20,"image deliveries must exclude duplicated frames");
+        skipping.add(0,60,8,2,1,1);
+        near(skipping.imageSteps,20,"invalid sample must not count a delivered image");
+        skipping.add(1000.0 / 60,60,8,2,4,2);
+        near(skipping.imageSteps,22,"batch image count must track delivered steps");
+        skipping.add(1000.0 / 60,60,8,2,1,9);
+        near(skipping.imageSteps,23,"image steps cannot exceed completed steps");
         // The caller submits no samples while paused; a session with a pause
         // must retain these averages instead of counting time in the menu.
         r2n64::EmulationPerformance pal;

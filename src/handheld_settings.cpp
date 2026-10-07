@@ -176,6 +176,9 @@ public:
             } else if (key == "gbaFrameskip") {
                 if (value.kind != Scalar::Kind::Integer) return false;
                 result.gbaFrameskip = value.integer;
+            } else if (key == "gbColor") {
+                if (value.kind != Scalar::Kind::Boolean) return false;
+                result.gbColor = value.boolean;
             }
             if (take('}')) break;
             if (!take(',')) return false;
@@ -391,7 +394,8 @@ bool saveHandheldSettings(const std::string& root, SystemType system,
         ",\n  \"overlay\": " + (settings.overlay ? "true" : "false") +
         ",\n  \"showStats\": " + (settings.showStats ? "true" : "false") +
         ",\n  \"shader\": " + std::to_string(settings.shader) +
-        ",\n  \"gbaFrameskip\": " + std::to_string(settings.gbaFrameskip) + "\n}\n";
+        ",\n  \"gbaFrameskip\": " + std::to_string(settings.gbaFrameskip) +
+        ",\n  \"gbColor\": " + (settings.gbColor ? "true" : "false") + "\n}\n";
     size_t written = 0;
     bool ok = true;
     while (written < source.size()) {

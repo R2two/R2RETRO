@@ -201,6 +201,7 @@ int main(int argc, char** argv) {
             require(emulator.loaded() && emulator.system() == system, "Core manager chose wrong system");
             require(std::string(emulator.coreName()) == (system == SystemType::GameBoyAdvance ? "mGBA" : "SameBoy"), "Core registry chose wrong core");
             verifyBoot(emulator, system, neutral, error, data, true);
+            require(emulator.frame().serial != 0, "Delivered software image lacks a serial");
             if (system == SystemType::GameBoy) {
                 palettes[0] = frameColors(emulator.frame());
                 const auto boots = cartridgeStatus(system)[4];
@@ -401,6 +402,45 @@ int main(int argc, char** argv) {
         verifyBoot(emulator, SystemType::GameBoy, neutral, error, data, false);
         require(frameColors(emulator.frame()) == palettes[1], "Reset lost the user's current palette");
         emulator.unload();
+        // Color is presentation only: compare fresh runs with the same inputs,
+        // one toggling color, including PCM and the fixture's cartridge status.
+        std::vector<std::array<unsigned char,8>> colorReferenceRam;
+        std::vector<int16_t> colorReferencePcm;
+        std::vector<uint64_t> colorReferenceVideo;
+        for(unsigned pass=0;pass<2;++pass) {
+            const auto root=data/("gb-color-"+std::to_string(pass));
+            require(emulator.load(argv[1],root.string(),log,error),error);
+            std::vector<std::array<unsigned char,8>> memory;
+            std::vector<int16_t> pcm;
+            std::vector<uint64_t> restoredVideo;
+            for(unsigned frame=0;frame<480;++frame) {
+                if(pass && (frame==360 || frame==420))
+                    require(emulator.setGameBoyPalette(frame==360 ? GameBoyColorPalette : 0,error),error);
+                require(emulator.run(neutral,error),error);
+                if(frame>=360) {
+                    memory.push_back(cartridgeStatus(SystemType::GameBoy));
+                    pcm.insert(pcm.end(),emulator.audio().begin(),emulator.audio().end());
+                }
+                if(pass && frame==390)
+                    require(frameColors(emulator.frame())==palettes[GameBoyColorPalette],"Color preset did not reach the rendered image");
+                if(frame>=423) restoredVideo.push_back(pixelHash(emulator.frame()));
+            }
+            emulator.unload();
+            if(!pass) {colorReferenceRam=memory;colorReferencePcm=pcm;colorReferenceVideo=restoredVideo;}
+            else require(memory==colorReferenceRam && !pcm.empty() && pcm==colorReferencePcm && restoredVideo==colorReferenceVideo,
+                         "Color toggle changed game status/audio or did not restore the original pixels");
+        }
+        tinted.gbPalette=GameBoyColorPalette;
+        require(emulator.load(argv[1],data.string(),log,error,tinted),error);
+        verifyBoot(emulator,SystemType::GameBoy,neutral,error,data,false);
+        require(frameColors(emulator.frame())==palettes[GameBoyColorPalette],"Initial color setting failed");
+        require(emulator.saveState(error,4),error);
+        require(emulator.setGameBoyPalette(0,error),error);
+        runFrames(emulator,neutral,3,error);
+        require(emulator.loadState(error,4),error);
+        runFrames(emulator,neutral,3,error);
+        require(frameColors(emulator.frame())==palettes[0],"State restored color after the user disabled it");
+        emulator.unload();
         // Start both A/B runs from a fresh cartridge lifecycle. Core save-state
         // formats do not necessarily restore host-side resampler/filter history,
         // so replaying a state is unsuitable for a bit-exact PCM comparison.
@@ -444,15 +484,24 @@ int main(int argc, char** argv) {
             require(emulator.load(argv[3], testData.string(), log, error, config), error);
             std::vector<std::array<unsigned char, 8>> observedRam;
             std::vector<int16_t> observedAudio;
+            unsigned deliveredSteps = 0;
             for (unsigned frame = 0; frame < 420; ++frame) {
                 GamepadInput pad = neutral;
                 if (frame >= 380 && frame < 400) pad.buttons = 1u << RETRO_DEVICE_ID_JOYPAD_B;
+                const auto priorSerial = emulator.frame().serial;
                 require(emulator.run(pad, error), error);
                 if (frame >= 360) {
+                    if (emulator.frame().serial != priorSerial) ++deliveredSteps;
                     observedRam.push_back(cartridgeStatus(SystemType::GameBoyAdvance));
                     observedAudio.insert(observedAudio.end(), emulator.audio().begin(), emulator.audio().end());
                 }
             }
+            require(deliveredSteps == 60 / (skip + 1), "GBA duplicate callbacks changed the image serial or drawing cadence");
+            const auto beforeResetSerial = emulator.frame().serial;
+            require(emulator.reset(error),error);
+            require(emulator.frame().serial == 0, "Reset retained a supposedly current image");
+            runFrames(emulator,neutral,180,error);
+            require(emulator.frame().serial > beforeResetSerial, "Reset reused an old image serial");
             emulator.unload();
             if (!skip) { referenceRam = observedRam; referenceAudio = observedAudio; }
             else require(observedRam == referenceRam && !observedAudio.empty() && observedAudio == referenceAudio,

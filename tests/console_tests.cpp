@@ -61,7 +61,7 @@ void picture(const fs::path& path, const CoreFrame& frame) {
 void advance(Emulator& emulator, const GamepadInput& input, unsigned count, std::string& error) {
     for (unsigned i = 0; i < count; ++i) require(emulator.run(input, error), "Run: " + error);
 }
-void boot(Emulator& emulator, SystemType system, const fs::path& output, std::string& error) {
+void boot(Emulator& emulator, SystemType system, const fs::path& output, std::string& error, bool pal = false) {
     GamepadInput input{}; input.connected = true;
     size_t samples = 0, audible = 0;
     int minimum = 32767, maximum = -32768;
@@ -88,11 +88,48 @@ void boot(Emulator& emulator, SystemType system, const fs::path& output, std::st
         [](uint32_t pixel) { return (pixel & 0xffffff) != 0; }) > 1000, "Console diagnostic picture is black");
     require(samples > 10000 && audible > 1000, "Missing sustained console tone after boot");
     require(maximum - minimum > 128, "Console tone contains only silence or constant DC");
+    const bool snes = system == SystemType::SuperNintendo;
+    // Contract of the pinned cores' reported clocks, not a PC speed target.
+    const double expectedHz = snes ? (pal ? 21281370.0/425568.0 : 21477272.0/357366.0) :
+                                    (pal ? 838977920.0/16777215.0 : 1008307711.0/16777215.0);
     require(emulator.sampleRate() >= 22000 && emulator.sampleRate() <= 96000 &&
-            emulator.fps() > 59 && emulator.fps() < 61, "Unexpected console timing");
+            std::abs(emulator.fps()-expectedHz) < 0.0001, "Region/core clock contract changed");
+    if (snes) {
+        const std::array<unsigned char,6> expected{{0xaa,0x55,0xaa,0x55,0x5a,0xa5}};
+        require(std::equal(expected.begin(),expected.end(),signature.begin()+8),
+                "SNES ROM-to-WRAM DMA or bank-zero WRAM mirrors failed");
+        auto colors = frame.pixels;
+        for (auto& pixel : colors) pixel &= 0xffffff;
+        std::sort(colors.begin(),colors.end());
+        colors.erase(std::remove(colors.begin(),colors.end(),0),colors.end());
+        require(std::unique(colors.begin(),colors.end())-colors.begin() >= 2,
+                "SNES DMA tile/BG1/CGRAM diagnostic became a flat backdrop");
+    } else {
+        const auto memory = ram(system);
+        require(memory.data[16]==0x5a && memory.data[17]==0x5a && memory.data[18]==0x5a,
+                "NES internal RAM mirror readbacks differ");
+    }
     if (!output.empty()) picture(output / (std::string(systemId(system)) + ".ppm"), frame);
     std::cout << systemId(system) << ": CPU signature, " << frame.width << 'x' << frame.height << ", "
               << audible << '/' << samples << " sustained audible/stereo samples\n";
+}
+void cadence(Emulator& emulator, SystemType system, std::string& error) {
+    GamepadInput neutral{}; neutral.connected=true;
+    const auto first = status(system);
+    uint64_t audioFrames=0;
+    constexpr unsigned steps=120;
+    for(unsigned i=0;i<steps;++i) {
+        require(emulator.run(neutral,error),error);
+        require(emulator.audio().size()%2==0,"Incomplete stereo pair");
+        audioFrames+=emulator.audio().size()/2;
+    }
+    const unsigned ticks=static_cast<unsigned char>(status(system)[5]-first[5]);
+    require(ticks>=steps-1 && ticks<=steps+1,"Guest VBlank counter drifted from emulated frames");
+    const double samplesPerFrame=emulator.sampleRate()/emulator.fps();
+    // Allow two frames of bounded callback buffering, not arbitrary silence.
+    require(std::abs(double(audioFrames)-steps*samplesPerFrame)<=2*samplesPerFrame,
+            "Audio delivery drifted from the emulated region clock");
+    std::cout<<systemId(system)<<": 120-frame VBlank/audio cadence, "<<ticks<<" guest ticks\n";
 }
 struct Observation {
     uint64_t video;
@@ -160,15 +197,19 @@ int main(int argc, char** argv) {
         std::string error;
         GamepadInput neutral{}; neutral.connected = true;
         unsigned consoleIndex = 0;
-        for (const auto* fixture : {"diagnostic.nes", "diagnostic-mmc3.nes", "diagnostic.sfc"}) {
-            const bool mmc3 = std::strcmp(fixture, "diagnostic-mmc3.nes") == 0;
-            const auto system = std::strcmp(fixture, "diagnostic.sfc") == 0 ? SystemType::SuperNintendo :
+        for (const auto* fixture : {"diagnostic.nes", "diagnostic-mmc3.nes", "diagnostic.sfc",
+                                   "diagnostic-pal.nes", "diagnostic-mmc3-pal.nes", "diagnostic-pal.sfc"}) {
+            const std::string name(fixture);
+            const bool pal = name.find("-pal")!=std::string::npos;
+            const bool mmc3 = name.find("mmc3")!=std::string::npos;
+            const auto system = name.find(".sfc")!=std::string::npos ? SystemType::SuperNintendo :
                 SystemType::NintendoEntertainmentSystem;
             const auto rom = fixtures / fixture;
             Game game; require(readRom(rom.string(), game, error) && game.system == system, "Fixture detection: " + error);
             require(emulator.load(rom.string(), data.string(), log, error), "Load: " + error);
             require(emulator.system() == system && emulator.loaded(), "Wrong core selected");
-            boot(emulator, system, data, error);
+            boot(emulator, system, data, error, pal);
+            cadence(emulator,system,error);
             if (mmc3) {
                 const std::array<unsigned char, 7> expected{{0x42,0x51,0x5e,0x49,8,14,0x63}};
                 const auto observed = status(system);
@@ -227,18 +268,18 @@ int main(int argc, char** argv) {
             }
             require(emulator.reset(error), "Reset: " + error);
             require(ram(system).data[256] == marker, "Reset erased battery-backed SRAM");
-            boot(emulator, system, {}, error);
+            boot(emulator, system, {}, error, pal);
             require(ram(system).data[256] == marker, "Reset boot overwrote untouched SRAM");
             emulator.unload();
             const auto battery = data / "saves" / systemId(system) / (game.id + ".srm");
             const auto persisted = read(battery);
             require(persisted.size() > 256 && persisted[256] == marker, "Battery SRAM was not persisted");
-            const auto reload = system == SystemType::SuperNintendo ? fixtures / "diagnostic.smc" : rom;
+            const auto reload = system == SystemType::SuperNintendo && !pal ? fixtures / "diagnostic.smc" : rom;
             Game reloaded; require(readRom(reload.string(), reloaded, error), error);
             require(reloaded.id == game.id, "Headered SNES copy changed canonical identity");
             require(emulator.load(reload.string(), data.string(), log, error), "Reload: " + error);
             require(ram(system).data[256] == marker, "Reload did not share persisted battery SRAM");
-            boot(emulator, system, {}, error);
+            boot(emulator, system, {}, error, pal);
             require(emulator.loadState(error), "Slot zero missing after reload: " + error);
             require(status(system) == slotStatus[0] && ram(system).data[256] == marker, "Reloaded state lost SRAM");
             emulator.unload();

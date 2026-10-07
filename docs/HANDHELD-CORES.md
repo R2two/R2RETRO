@@ -26,6 +26,15 @@ emitir PCM a la mitad del reloj GB (~2 MHz). El core sigue administrando su APU.
 Sus boot ROMs de reemplazo son código libre de SameBoy; se usan los precompilados
 del tag oficial, con fuentes ensamblador incluidas. No se necesita RGBDS ni BIOS Nintendo.
 
+Cambio fuente posterior a v0.5.5, sin compilar: la copia aislada de SameBoy añade
+`r2retro_color` al manejador de paleta DMG mediante `GB_set_palette`, con cuatro
+colores artísticos y color LCD apagado. La paleta reside en memoria estática,
+porque SameBoy conserva su puntero. No cambia hardware a CGB, boot ROM, ROM,
+CPU, temporizadores o APU; no reconstruye colores distintos para sprites/fondos.
+El interruptor de pausa conserva la paleta monocroma elegida y las preferencias
+antiguas empiezan con color desactivado. La firma de build y provenance identifican
+el parche, incluso al construir incrementalmente. [Alcance](GB-COLORIZATION.md).
+
 mGBA conserva el listado de fuentes y flags del target libretro; la copia aislada
 cambia ese target de `SHARED` a `STATIC` y fija la metadata al commit/tag oficial,
 evitando que Git detecte accidentalmente el repositorio padre. Se habilita GBA y se deshabilita
@@ -39,6 +48,16 @@ El getter libretro de SRAM GBA expone el buffer activo después de la preparaci�
 diferida: al cargar un estado, mGBA puede usar una máscara temporal de SRAM en
 lugar del buffer original. Así se conserva la SRAM restaurada al cerrar el juego.
 Antes del primer cuadro se mantiene el buffer original para cargar guardados nativos.
+
+Cambio fuente posterior a v0.5.5, pendiente de compilar: el adaptador mGBA
+consulta `frameskipCounter` después de las opciones en vivo y antes de `runFrame`.
+Cuando el renderer omite dibujar, entrega un callback de vídeo NULL para repetir
+la imagen anterior, en vez de reenviar el mismo buffer. CPU, DMA, temporizadores
+y APU siguen ejecutándose. El frontend declara `GET_CAN_DUPE=true`. Este parche
+se aplica exclusivamente a la copia aislada del commit indicado, con coincidencia
+exacta del bloque original, y queda registrado en `provenance.txt`. Los reinicios,
+estados, cambios de salto y equivalencia de memoria/PCM requieren la regresión
+preparada antes de distribuirlo. No se ha medido una ganancia en PS4.
 
 La compilación PS4 usa exclusivamente OpenOrbis/PacBrew instalado y sus pruebas
 reales de enlace para detectar funciones. El adaptador CMake selecciona la ruta

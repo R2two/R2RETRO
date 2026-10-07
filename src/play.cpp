@@ -52,7 +52,8 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
     if (requestedSystem != SystemType::Unknown && requestedSystem != SystemType::Nintendo64) {
         if (!loadHandheldSettings(platform_.dataPath(), requestedSystem, handheld, settingsError))
             log_.write("WARNING", "Preferencias del sistema: " + settingsError);
-        config.gbPalette = handheld.gbPalette;
+        config.gbPalette = requestedSystem == SystemType::GameBoy && handheld.gbColor ?
+            GameBoyColorPalette : handheld.gbPalette;
         config.gbaFrameskip = handheld.gbaFrameskip;
     }
     if (!emulator_.load(path, platform_.dataPath(), log_, error, config)) {
@@ -85,7 +86,8 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
         ": avance=" + std::to_string(handheld.fastForward) + "x; espacio=" + std::to_string(handheld.stateSlot + 1) +
         "; entero=" + std::to_string(handheld.integerScaling) + "; suavizado=" + std::to_string(handheld.linearFilter) +
         "; paleta=" + std::to_string(handheld.gbPalette) + "; marco=" + std::to_string(handheld.overlay) +
-        "; estadísticas=" + std::to_string(handheld.showStats));
+        "; estadísticas=" + std::to_string(handheld.showStats) +
+        "; colorGB=" + std::to_string(emulator_.system() == SystemType::GameBoy && handheld.gbColor));
     // Asset I/O and texture creation belong to loading or the paused menu,
     // never to the active emulation/frame path. A missing frame is non-fatal.
     std::string overlayError;
@@ -111,7 +113,7 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
     bool paused = false, menuWasHeld = false, acceptingInput = false, ok = true;
     bool captureRequested = false;
     unsigned pauseSelection = 0, frames = 0;
-    enum class PauseAction { Continue, Slot, SaveState, LoadState, Battery, Reset, Speed, Scale, Filter, Shader, Frameskip, Overlay, Stats, Palette, Capture, Close };
+    enum class PauseAction { Continue, Slot, SaveState, LoadState, Battery, Reset, Speed, Scale, Filter, Shader, Frameskip, Overlay, Stats, Palette, Color, Capture, Close };
     std::vector<std::pair<PauseAction, std::string>> pauseItems{{PauseAction::Continue, "Continuar"}};
     const auto refreshPauseItems = [&]() {
         pauseItems.resize(1);
@@ -139,8 +141,10 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
                 (handheld.integerScaling ? "Imagen: píxeles cuadrados (entera)" : "Imagen: proporción 4:3"));
             pauseItems.emplace_back(PauseAction::Filter, handheld.linearFilter ? "Filtro: suavizado" : "Filtro: píxeles nítidos");
             pauseItems.emplace_back(PauseAction::Stats, handheld.showStats ? "Estadísticas: activadas" : "Estadísticas: desactivadas");
-            if (emulator_.system() == SystemType::GameBoy)
-                pauseItems.emplace_back(PauseAction::Palette, std::string("Paleta: ") + gbPaletteName(handheld.gbPalette));
+            if (emulator_.system() == SystemType::GameBoy) {
+                pauseItems.emplace_back(PauseAction::Color, handheld.gbColor ? "Color GB: activado (4 tonos)" : "Color GB: desactivado");
+                pauseItems.emplace_back(PauseAction::Palette, std::string(handheld.gbColor ? "Paleta al desactivar color: " : "Paleta: ") + gbPaletteName(handheld.gbPalette));
+            }
         }
         pauseItems.emplace_back(PauseAction::Capture, "Capturar imagen");
         pauseItems.emplace_back(PauseAction::Close, "Volver a la biblioteca");
@@ -158,7 +162,11 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
     auto clockMs = [clockRate]() { return SDL_GetPerformanceCounter() * 1000.0 / clockRate; };
     double deadline = clockMs();
     EmulationPerformance intervalPerformance, sessionPerformance;
+    uint64_t uploadedSerial = 0;
+    // A newly loaded game must not borrow the last session's software texture.
+    video_.releaseGameFrame();
     std::string performanceText = "Midiendo emulación…";
+    std::string imageRateText = "Entregas de imagen: midiendo…";
     std::string performanceDetail;
     std::string videoDetail;
     unsigned inspectedVideoFrame = ~0u;
@@ -172,6 +180,10 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
             label, stats.speedPercent(), stats.intervalsPerSecond(), extended ? "FPS" : "VI/s",
             stats.averageCoreMs(), extended ? "frame" : "VI", stats.averagePresentMs(),
             extended ? "frame" : "VI", stats.elapsedMs / 1000.0);
+        log_.write("INFO", message);
+        std::snprintf(message, sizeof(message), "Video delivery: %.1f steps/s with a new image; %llu/%llu emulated steps (not unique-pixel FPS)",
+            stats.imagesPerSecond(), static_cast<unsigned long long>(stats.imageSteps),
+            static_cast<unsigned long long>(stats.intervals));
         log_.write("INFO", message);
         if (!extended && config.profileCore) {
             std::snprintf(message, sizeof(message),
@@ -239,7 +251,7 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
                 } else if (action == PauseAction::Slot || action == PauseAction::Speed ||
                            action == PauseAction::Scale || action == PauseAction::Filter ||
                            action == PauseAction::Shader || action == PauseAction::Frameskip ||
-                           action == PauseAction::Overlay || action == PauseAction::Stats || action == PauseAction::Palette) {
+                           action == PauseAction::Overlay || action == PauseAction::Stats || action == PauseAction::Palette || action == PauseAction::Color) {
                     auto next = handheld;
                     if (action == PauseAction::Slot) next.stateSlot = (next.stateSlot + 1) % 5;
                     if (action == PauseAction::Speed) next.fastForward = next.fastForward == 2 ? 4 : next.fastForward == 4 ? 8 : 2;
@@ -248,10 +260,12 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
                     if (action == PauseAction::Overlay) next.overlay = !next.overlay;
                     if (action == PauseAction::Stats) next.showStats = !next.showStats;
                     if (action == PauseAction::Palette) next.gbPalette = (next.gbPalette + 1) % 4;
+                    if (action == PauseAction::Color) next.gbColor = !next.gbColor;
                     if (action == PauseAction::Shader) next.shader = (next.shader + 1) % 3;
                     if (action == PauseAction::Frameskip) next.gbaFrameskip = (next.gbaFrameskip + 1) % 3;
                     std::string settingError;
-                    const bool applied = (action != PauseAction::Palette || emulator_.setGameBoyPalette(next.gbPalette, settingError)) &&
+                    const bool applied = ((action != PauseAction::Palette && action != PauseAction::Color) ||
+                        emulator_.setGameBoyPalette(next.gbColor ? GameBoyColorPalette : next.gbPalette, settingError)) &&
                         (action != PauseAction::Frameskip || emulator_.setGbaFrameskip(next.gbaFrameskip, settingError));
                     if (applied) {
                         handheld = next;
@@ -278,6 +292,11 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
                         if (!shaderAvailable) pauseNotice = shaderError;
                         if (persisted && action == PauseAction::Frameskip) pauseNotice =
                             "Aplicado al continuar. Reduce dibujo, no la velocidad objetivo; puede verse menos fluido.";
+                        if (persisted && action == PauseAction::Color) pauseNotice = handheld.gbColor ?
+                            "Colorización de 4 tonos al continuar. No añade gráficos de Game Boy Color." :
+                            "Se recuperará tu paleta anterior al continuar.";
+                        if (persisted && action == PauseAction::Palette && handheld.gbColor)
+                            pauseNotice = "Paleta guardada para cuando desactives Color GB.";
                         refreshPauseItems();
                     } else pauseNotice = settingError;
                 } else if (action == PauseAction::Battery) {
@@ -300,13 +319,14 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
                     if (success && action != PauseAction::SaveState) {
                         intervalPerformance = {}; sessionPerformance = {}; nextPerformanceLog = 10000;
                         performanceText = "Midiendo emulación…"; performanceDetail.clear();
+                        imageRateText = "Entregas de imagen: midiendo…";
                     }
                 }
             } else if ((input.pressed & Back) && connected) {
                 paused = false; acceptingInput = false; audio_.pause(false); deadline = clockMs();
             }
         }
-        unsigned completedSteps = 0;
+        unsigned completedSteps = 0, freshImageSteps = 0;
         auto gamepad = input.gamepad;
         if (!paused) {
             if (extended) {
@@ -331,6 +351,7 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
             audio_.pause(paused || speed.accelerated());
             audio_.clear(); deadline = clockMs(); intervalPerformance = {};
             performanceText = "Midiendo emulación…"; performanceDetail.clear();
+            imageRateText = "Entregas de imagen: midiendo…";
             log_.write("INFO", "Velocidad solicitada: " + std::to_string(speed.factor()) + "x" +
                 (speed.accelerated() ? "; audio silenciado mientras R2 está pulsado" : "; audio normal"));
         }
@@ -338,7 +359,9 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
             const double batchBegin = clockMs();
             for (unsigned step = 0; step < speed.factor(); ++step) {
             const double coreBegin = clockMs();
+            const uint64_t priorSerial = emulator_.frame().serial;
             if (!emulator_.run(gamepad, error)) { ok = false; break; }
+            if (emulator_.frame().serial && emulator_.frame().serial != priorSerial) ++freshImageSteps;
             coreMs += clockMs() - coreBegin;
             const auto& pcm = emulator_.audio();
             samples += pcm.size();
@@ -389,7 +412,8 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
         } else if (!frame.pixels.empty()) {
             if (!video_.gameFrame(frame.pixels.data(), frame.width, frame.height, error,
                 extended && handheld.integerScaling, extended && handheld.linearFilter, handheldSystem,
-                emulator_.system())) { ok = false; break; }
+                emulator_.system(), !frame.serial || frame.serial != uploadedSerial)) { ok = false; break; }
+            uploadedSerial = frame.serial;
         } else video_.clear(1);
         if (overlaySystem && lastOverlayDetail != video_.handheldOverlayDetail()) {
             lastOverlayDetail = video_.handheldOverlayDetail();
@@ -447,8 +471,7 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
                 video_.text(performanceText, 1130, 335, accent, 24, 630);
                 video_.text(performanceDetail, 1130, 382, muted, 20, 630);
                 video_.text("100% = velocidad normal", 1130, 434, muted, 20, 630);
-                video_.text(emulator_.system() == SystemType::GameBoyAdvance && handheld.gbaFrameskip ?
-                    "FPS emulados; algunos cuadros se repiten" : "FPS de salida del núcleo", 1130, 470, muted, 20, 630);
+                video_.text(imageRateText, 1130, 470, muted, 20, 630);
                 video_.text(videoDetail, 1130, 501, muted, 20, 630);
                 video_.text("Mantén R2 / Espacio: " + std::to_string(handheld.fastForward) + "x", 1130, 536, accent, 24, 630);
                 video_.text("El audio se silencia durante el avance.", 1130, 578, muted, 20, 630);
@@ -519,8 +542,8 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
         if (!paused) {
             const double elapsedMs = clockMs() - frameBegin;
             const double nominalHz = std::clamp(emulator_.fps(), 20.0, 65.0);
-            intervalPerformance.add(elapsedMs, nominalHz, coreMs, presentMs, completedSteps);
-            sessionPerformance.add(elapsedMs, nominalHz, coreMs, presentMs, completedSteps);
+            intervalPerformance.add(elapsedMs, nominalHz, coreMs, presentMs, completedSteps, freshImageSteps);
+            sessionPerformance.add(elapsedMs, nominalHz, coreMs, presentMs, completedSteps, freshImageSteps);
             if (intervalPerformance.elapsedMs >= 1000) {
                 char label[128], detail[160];
                 std::snprintf(label, sizeof(label), "Emulación %.0f%% · %.1f %s",
@@ -530,6 +553,8 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
                     intervalPerformance.averageCoreMs(), intervalPerformance.averagePresentMs());
                 performanceText = label;
                 performanceDetail = detail;
+                std::snprintf(label, sizeof(label), "Entregas de imagen: %.1f/s · FPS emulados arriba", intervalPerformance.imagesPerSecond());
+                imageRateText = label;
                 intervalPerformance = {};
             }
             if (sessionPerformance.elapsedMs >= nextPerformanceLog) {

@@ -11,7 +11,8 @@ namespace r2n64 {
 class Log;
 enum class CpuMode { Automatic, CachedInterpreter };
 constexpr unsigned SaveStateSlotCount = 5;
-constexpr unsigned GameBoyPaletteCount = 4;
+constexpr unsigned GameBoyColorPalette = 4; // Optional artistic four-color DMG palette.
+constexpr unsigned GameBoyPaletteCount = 5;
 struct EmulationConfig {
     // N64-specific options. Portable cores retain their native CPU/video paths.
     // Workers are requested Angrylion workers, not an available-CPU claim.
@@ -22,7 +23,7 @@ struct EmulationConfig {
     bool audioHle = true;
     // Optional component timers, disabled during normal performance runs.
     bool profileCore = false;
-    // SameBoy DMG palette: grey, lime, olive, teal. Other systems ignore this.
+    // SameBoy DMG palette: grey, lime, olive, teal, artistic color. Other systems ignore this.
     unsigned gbPalette = 0;
     N64Graphics graphics = N64Graphics::Software;
     HardwareVideoHost* hardware = nullptr; // Borrowed; ignored in software mode.
@@ -37,6 +38,9 @@ struct CoreFrame {
     unsigned width = 0, height = 0;
     bool hardware = false;
     bool bottomLeftOrigin = false;
+    // Nonzero delivery token; NULL libretro video callbacks retain it. This
+    // counts delivered images, not pixel differences or the game's internal FPS.
+    uint64_t serial = 0;
 };
 
 // All calls remain on the frontend thread; N64 uses cooperative stacks.

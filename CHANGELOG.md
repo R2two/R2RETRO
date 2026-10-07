@@ -4,6 +4,7 @@ Resumen editorial de hitos existentes. [STATUS](docs/STATUS.md) conserva pruebas
 
 | Versión | Hito |
 |---|---|
+| **0.5.6** | Color GB on/off, región NES y diagnósticos NES/SNES, reutilización de texturas, rutas del instalador y Acerca de/Ko-fi. [Notas](docs/releases/v0.5.6.md). |
 | **0.5.5** | Shaders LCD/CRT, SRAM/RTC en pausa, frameskip GBA, Cloudflare fijo, logos revisados y actualizador. [Notas](docs/releases/v0.5.5.md). |
 | 0.5.2–0.5.4 | Compatibilidad N64, biblioteca por consola, perfiles automáticos, arte y actualizador con diagnóstico de red; compilaciones locales previas. |
 | 0.5.1 | HLE gráfico conservador para GLideN64, respaldo CXD4 y perfil SDL/núcleo. [Notas](docs/releases/v0.5.1.md). |

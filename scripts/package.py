@@ -17,8 +17,8 @@ TITLE_ID = "RNTD00064"
 CONTENT_ID = f"IV0001-{TITLE_ID}_00-R2N64APP00000001"
 # Preserve installed application/save identity when changing the public brand.
 APP_TITLE = "R2RETRO"
-VERSION = "0.5.5"
-SFO_VERSION = "00.55"
+VERSION = "0.5.6"
+SFO_VERSION = "00.56"
 OVERLAYS = {"gb": "gb.png", "gbc": "gbc.png", "gba": "gba.png", "snes": "snes.jpg"}
 
 
@@ -155,13 +155,17 @@ def main():
         raise RuntimeError("Missing ELF output")
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    destination = dist / f"R2RETRO-v{VERSION}-display-network.pkg"
+    destination = dist / f"R2RETRO-v{VERSION}-color-stability.pkg"
     shutil.copy2(package, destination)
     shutil.copy2(elf, args.build / "R2RETRO.elf")
     digest = hashlib.sha256(destination.read_bytes()).hexdigest()
     (dist / (destination.name + ".sha256")).write_text(f"{digest}  {destination.name}\n")
     (dist / "build-info.json").write_text(json.dumps({
-        "version": VERSION, "milestone": "display-network-preview", "title": APP_TITLE,
+        "version": VERSION, "milestone": "color-stability-preview", "title": APP_TITLE,
+        "gb_color": "optional-four-tone-DMG-palette; live-toggle; persisted; restores-base-palette",
+        "video_delivery": "serial-based-texture-reuse; native-mGBA-duplicate-callbacks; separate-delivery-metric",
+        "nes_region": "explicit-auto; clean-iNES1-PAL-header-hint; no-overclock; original-sprite-limit",
+        "about": "Rtwo-R2; feature-summary; core-credits; https://ko-fi.com/rtwo_",
         "display_shaders": "optional-GLES2-LCD-grid-CRT-scanlines; per-system; default-off; GB-GBC-GBA-NES-SNES",
         "gba_frameskip": "native-mGBA-0-1-2; default-off; per-system",
         "manual_cartridge_save": "paused-SRAM-RTC; atomic-per-file; GB-GBC-GBA-NES-SNES",
@@ -175,7 +179,7 @@ def main():
                     "dns": "fixed-Cloudflare-DoH; updates-and-libretro-catalog; no-user-override",
                     "diagnostics": "stage-elapsed; cooperative-cancel-45s-check-watchdog",
                     "transport": "HTTPS-stream-to-disk; SHA256; bounded-PKG-SFO",
-                    "installation": "BGFT-local-storage; explicit-confirmation; no-uninstall",
+                    "installation": "BGFT-local-storage; verified-data-user-data-alias; explicit-confirmation; no-uninstall",
                     "ps4_self_update_verified": False},
         "console_folders": True, "n64_automatic_profiles": "experimental-exact-identity-Mario-USA-Zelda-USA1.2",
         "home_background_sha256": hashlib.sha256((ROOT / "assets/background-room.jpg").read_bytes()).hexdigest(),
@@ -212,7 +216,7 @@ def main():
     shutil.copy2(dist / "build-info.json", dist / f"build-info-v{VERSION}.json")
     subprocess.run([sys.executable, str(ROOT / "scripts/prepare-update.py"), "--pkg", str(destination),
                     "--build-info", str(dist / "build-info.json"), "--channel", "experimental",
-                    "--notes", "Cloudflare fijo para actualizaciones y Libretro; logos revisados; shaders LCD/CRT, guardado SRAM/RTC en pausa y frameskip GBA opcionales. Experimental: prueba PS4 pendiente.",
+                    "--notes", "Color GB opcional, ajustes NES/SNES, menos cargas de textura, corrección de ruta del instalador y Acerca de con Ko-fi. Experimental: primera instalación manual; validación PS4 pendiente.",
                     "--output", str(dist / f"update-v{VERSION}-experimental.txt")], check=True)
     print(f"PKG validado: {destination} ({destination.stat().st_size} bytes)")
 

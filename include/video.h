@@ -44,7 +44,9 @@ public:
     // drawn. SNES requires its explicit system while retaining the 4:3 default.
     bool gameFrame(const uint32_t* pixels, unsigned width, unsigned height, std::string& error,
                    bool integerScaling = false, bool linearFilter = false, bool nativeAspect = false,
-                   SystemType system = SystemType::Unknown);
+                   SystemType system = SystemType::Unknown, bool pixelsChanged = true);
+    // pixelsChanged=false reuses an initialized texture, but still recomposes
+    // scaling, filters, shaders, overlays and UI. First use/resize always uploads.
     // Load only at game start or while paused. Reuses the decoded texture when
     // toggled; gameFrame never reads overlay files. Failure falls back to 2D
     // presentation without artwork. Unknown/false clears the selection.
@@ -102,6 +104,7 @@ private:
     std::string libraryKey_;
     unsigned gameWidth_ = 0, gameHeight_ = 0;
     bool gameLinearFilter_ = false, gameScaleModeSet_ = false;
+    bool gamePixelsReady_ = false;
     std::array<SDL_Texture*, 3> backgrounds_{};
     std::array<SDL_Texture*, 4> overlays_{};
     std::array<std::vector<uint8_t>, 4> overlayBytes_;

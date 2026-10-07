@@ -102,7 +102,7 @@ Item item(const View& s, size_t index) {
             s.menu.details ? "X  Cambiar modo" : "X  Ver opciones", Icon::Screen};
         return {"Diagnóstico", "Mando, almacenamiento y estado de la aplicación.", "X  Ver estado", Icon::Sliders};
     case Category::About:
-        if (index == 0) return {"R2RETRO", "Nintendo 64 · NES · SNES · GB · GBC · GBA", "X  Acerca de", Icon::Info};
+        if (index == 0) return {"R2RETRO", "Homebrew creado por Rtwo / R2", "X  Autoría, mejoras y Ko-fi", Icon::Info};
         if (index == 1) return {"Prueba Nintendo 64", "Comprueba imagen, sonido y controles.", "X  Iniciar prueba incluida", Icon::Cartridge};
         if (index == 2) return {"Prueba GPU", "Comprueba el renderizado de la consola.", "X  Iniciar prueba GPU", Icon::Screen};
         return {"Salir de R2RETRO", "Cerrar la aplicación", "X  Salir", Icon::Power};
@@ -237,11 +237,22 @@ void detail(Video& v, const View& s) {
         }
     } else {
         title(selected == 0 ? "R2RETRO  v"+s.version : "En desarrollo");
-        row("Homebrew para PlayStation 4"); row("Interfaz XMB con SDL2");
-        row("Emulación N64 experimental");
-        row("Imagen, sonido y controles integrados.");
-        y+=12; row("Guardado al volver a la biblioteca.",accent);
-        row("Compatibilidad de juegos en pruebas.");
+        // Twelve short lines fit the detail panel without covering status hints.
+        const auto aboutRow = [&](const std::string& text, SDL_Color color=muted) {
+            v.text(text,x,y,color,20,w); y+=26;
+        };
+        aboutRow("Homebrew PS4 creado por Rtwo / R2",white);
+        aboutRow("N64 · NES · SNES · GB · GBC · GBA");
+        aboutRow("XMB, biblioteca por consola y juegos USB.");
+        aboutRow("Partidas, estados, capturas y avance rápido.");
+        aboutRow("Marcos, LCD/CRT y color GB opcional.");
+        aboutRow("Carátulas y fichas de Libretro por internet.");
+        aboutRow("N64: GPU y perfiles experimentales.");
+        aboutRow("Actualizador desde el menú: experimental.");
+        aboutRow("Núcleos: Mupen64Plus-Next, SameBoy, mGBA,");
+        aboutRow("FCEUmm y bsnes-mercury. Gracias a sus autores.");
+        aboutRow("Apoya el desarrollo: invítame un café",white);
+        aboutRow("https://ko-fi.com/rtwo_",accent);
     }
 }
 void buttonHint(Video& v, int x, int y, char kind, const std::string& text) {

@@ -1,6 +1,8 @@
 # R2RETRO
 
-**Versión actual: v0.5.5 experimental.** En pausa GB/GBC/GBA/NES/SNES se puede elegir Shader (LCD/CRT/apagado) y escribir SRAM/RTC. GBA añade salto de cuadros 0/1/2. Todo desactivado inicialmente salvo las preferencias anteriores. La SRAM no sustituye Guardar dentro del juego. Ajustes → Actualizaciones consulta el canal experimental; información/carátulas y actualizaciones usan Cloudflare DoH fijo, sin cambiar el DNS PS4. N64 inicia con perfil automático por identidad exacta; el resto conserva la base. [Notas y límites](releases/v0.5.5.md).
+**Versión actual: v0.5.6 experimental.** En un juego GB, **L3+R3 → Color GB** activa o desactiva una paleta de cuatro colores; al continuar se aplica y al apagar recupera la paleta anterior. Se guarda por sistema y puede combinarse con Shader LCD/CRT. No convierte el juego en GBC. GB/GBC/GBA/NES/SNES conservan shaders y escritura SRAM/RTC desde pausa; GBA ofrece salto de cuadros 0/1/2. La SRAM no sustituye Guardar dentro del juego. Información/carátulas y actualizaciones usan Cloudflare DoH fijo sin cambiar el DNS PS4. [Notas y límites](releases/v0.5.6.md).
+
+**Primera instalación de v0.5.6: manual por USB o FTP + Package Installer HDD de GoldHEN, sobre la versión anterior y sin desinstalar.** La corrección de rutas del instalador sólo se aplica una vez instalada; BGFT sobre sí misma sigue pendiente de prueba física. Acerca de incluye autoría Rtwo / R2 y Ko-fi.
 
 Las secciones por versión siguientes describen su comportamiento histórico.
 

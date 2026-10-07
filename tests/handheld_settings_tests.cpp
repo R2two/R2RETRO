@@ -21,7 +21,7 @@ bool equal(const HandheldSettings& a, const HandheldSettings& b) {
     return a.fastForward == b.fastForward && a.stateSlot == b.stateSlot &&
            a.integerScaling == b.integerScaling && a.linearFilter == b.linearFilter &&
            a.gbPalette == b.gbPalette && a.overlay == b.overlay && a.showStats == b.showStats &&
-           a.shader == b.shader && a.gbaFrameskip == b.gbaFrameskip;
+           a.shader == b.shader && a.gbaFrameskip == b.gbaFrameskip && a.gbColor == b.gbColor;
 }
 std::string read(const fs::path& path) {
     std::ifstream file(path, std::ios::binary);
@@ -61,6 +61,21 @@ int main() {
         require(equal(loaded, defaults) && error.empty() && !fs::exists(root), "missing root changed disk/defaults");
         require(saveHandheldSettings(root.string(), SystemType::GameBoy, defaults, error), "default save failed");
         const std::string baseline = read(gb);
+        require(!defaults.gbColor, "GB color must be opt-in");
+        write(gb,replace(baseline, ",\n  \"gbColor\": false", ""));
+        loaded.gbColor = true;
+        require(loadHandheldSettings(root.string(),SystemType::GameBoy,loaded,error) && !loaded.gbColor,
+                "Old preferences enabled GB color");
+        HandheldSettings colored = defaults;
+        colored.gbPalette = 2; colored.gbColor = true;
+        require(saveHandheldSettings(root.string(),SystemType::GameBoy,colored,error), "Save GB color failed");
+        require(loadHandheldSettings(root.string(),SystemType::GameBoy,loaded,error) && equal(loaded,colored),
+                "Color toggle did not retain the original palette");
+        colored.gbColor = false;
+        require(saveHandheldSettings(root.string(),SystemType::GameBoy,colored,error), "Disable GB color failed");
+        require(loadHandheldSettings(root.string(),SystemType::GameBoy,loaded,error) && loaded.gbPalette==2 && !loaded.gbColor,
+                "Disabling color lost the base palette");
+        write(gb,baseline);
         require(loadHandheldSettings(root.string(), SystemType::GameBoy, loaded, error) && equal(loaded, defaults),
                 "default round trip failed");
         require(defaults.overlay, "overlay should be enabled by default");
@@ -150,6 +165,9 @@ int main() {
                  replace(baseline, "\"fastForward\": 2", "\"fastForward\": 4294967298"),
                  replace(baseline, "\"stateSlot\": 0", "\"stateSlot\": 5"),
                  replace(baseline, "\"gbPalette\": 0", "\"gbPalette\": 4"),
+                 replace(baseline, "\"gbColor\": false", "\"gbColor\": 1"),
+                 replace(baseline, "\"gbColor\": false", "\"gbColor\": \"true\""),
+                 replace(baseline, "\"gbColor\": false", "\"gbColor\": false, \"gbColor\": true"),
                  replace(baseline, "\"shader\": 0", "\"shader\": 3"),
                  replace(baseline, "\"shader\": 0", "\"shader\": true"),
                  replace(baseline, "\"shader\": 0", "\"shader\": 1, \"shader\": 2"),

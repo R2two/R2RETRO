@@ -5,7 +5,7 @@ OO="${OO_PS4_TOOLCHAIN:-/opt/pacbrew/ps4/openorbis}"
 mkdir -p build/update-tests
 g++ -std=c++17 -Wall -Wextra -Wpedantic -g -fsanitize=address,undefined \
     -DR2N64_PS4=1 -Iinclude -idirafter "$OO/include" tests/update_installer_tests.cpp \
-    src/update_installer.cpp -o build/update-tests/installer
+    src/update_installer.cpp -Wl,--wrap=open -o build/update-tests/installer
 ASAN_OPTIONS=detect_leaks=0 build/update-tests/installer
 for backend in native ps4-path; do
     extra=()

@@ -341,6 +341,7 @@ void Video::releaseGameFrame() {
     if (gameTexture_) SDL_DestroyTexture(gameTexture_);
     gameTexture_ = nullptr; gameWidth_ = gameHeight_ = 0;
     gameScaleModeSet_ = false;
+    gamePixelsReady_ = false;
 }
 void Video::clearLibraryArtwork() {
     if (libraryTexture_) SDL_DestroyTexture(libraryTexture_);
@@ -510,7 +511,7 @@ void Video::verifyOverlayComposition() {
     startupLog("Overlay composition", detail.c_str());
 }
 bool Video::gameFrame(const uint32_t* pixels, unsigned width, unsigned height, std::string& error,
-                      bool integerScaling, bool linearFilter, bool nativeAspect, SystemType system) {
+                      bool integerScaling, bool linearFilter, bool nativeAspect, SystemType system, bool pixelsChanged) {
     error.clear();
     overlayDrawn_ = false;
     if (!pixels || !width || !height || width > 2048 || height > 2048) {
@@ -544,8 +545,12 @@ bool Video::gameFrame(const uint32_t* pixels, unsigned width, unsigned height, s
         gameLinearFilter_ = linearFilter;
         gameScaleModeSet_ = true;
     }
-    if (SDL_UpdateTexture(gameTexture_, nullptr, pixels, width * sizeof(uint32_t)) < 0) {
-        error = SDL_GetError(); return false;
+    if (pixelsChanged || !gamePixelsReady_) {
+        gamePixelsReady_ = false;
+        if (SDL_UpdateTexture(gameTexture_, nullptr, pixels, width * sizeof(uint32_t)) < 0) {
+            error = SDL_GetError(); return false;
+        }
+        gamePixelsReady_ = true;
     }
     // A complete emulation frame owns the canvas. Do not inherit a library
     // clip, viewport or render target which could hide all frame side panels.

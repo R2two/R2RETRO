@@ -35,7 +35,31 @@ old = 'GB_set_sample_rate(&gameboy[i], GB_get_clock_rate(&gameboy[i]) / 2);'
 new = 'GB_set_sample_rate(&gameboy[i], 48000); /* R2N64 device audio rate */'
 assert s.count(old) == 1 or s.count(new) == 1
 if old in s:
-    p.write_text(s.replace(old, new))
+    s = s.replace(old, new)
+# Live DMG presentation only. Static storage is required: SameBoy retains the
+# palette pointer. Index 4 is LCD-off white; this does not select CGB hardware.
+old = '''            else if (strcmp(var.value, "teal") == 0) {
+                GB_set_palette(&gameboy[0], &GB_PALETTE_GBL);
+            }
+        }
+
+        var.key = "sameboy_color_correction_mode";'''
+new = '''            else if (strcmp(var.value, "teal") == 0) {
+                GB_set_palette(&gameboy[0], &GB_PALETTE_GBL);
+            }
+            else if (strcmp(var.value, "r2retro_color") == 0) {
+                static const GB_palette_t r2retro_color = {{{0x08,0x18,0x28},
+                    {0x38,0x80,0x48}, {0xf0,0x98,0x80}, {0xff,0xf8,0xe8}, {0xff,0xf8,0xe8}}};
+                GB_set_palette(&gameboy[0], &r2retro_color);
+            }
+        }
+
+        var.key = "sameboy_color_correction_mode";'''
+assert s.count(old) == 1 or s.count(new) == 1
+if old in s:
+    s = s.replace(old, new)
+if p.read_text() != s:
+    p.write_text(s)
 PY
 CC=cc
 AR=ar
@@ -53,7 +77,7 @@ fi
 # The official libretro tag supplies SameBoy's own open source replacement boot ROMs.
 echo "Building SameBoy ($TARGET); log: $BUILD/sameboy.log"
 SAMEBOY_FORCE=()
-SAMEBOY_PROFILE="$SAMEBOY_REV;audio=48000;$CC;$COMMON_FLAGS;$("$CC" --version | head -n 1)"
+SAMEBOY_PROFILE="$SAMEBOY_REV;audio=48000;dmg_color=1;$CC;$COMMON_FLAGS;$("$CC" --version | head -n 1)"
 if [[ ! -f "$BUILD/sameboy-profile" || "$(cat "$BUILD/sameboy-profile")" != "$SAMEBOY_PROFILE" ]]; then
     SAMEBOY_FORCE=(-B)
 fi
@@ -100,6 +124,26 @@ new = '''\tcase RETRO_MEMORY_SAVE_RAM:
 \t\treturn savedata;'''
 assert libretro.count(old) == 1
 libretro = libretro.replace(old, new)
+# mGBA's renderer skips drawing, but upstream libretro resubmits the same
+# outputBuffer every step. Our host supports NULL duplicates. Observe the real
+# renderer counter (after live option updates), never infer it from run counts.
+old = '\tcore->runFrame(core);\n\tunsigned width, height;\n\tcore->desiredVideoDimensions(core, &width, &height);\n\tvideoCallback(outputBuffer, width, height, BYTES_PER_PIXEL * 256);'
+new = '''\t/* R2RETRO: each run ends at VBlank. video.c draws this interval
+\t * only when the current frameskipCounter is <= 0, then advances it.
+\t * CPU, DMA, timers and audio still execute on skipped intervals. */
+\tbool r2retroDrawn = true;
+#ifdef M_CORE_GBA
+\tif (core->platform(core) == mPLATFORM_GBA) {
+\t\tconst struct GBA* gba = core->board;
+\t\tr2retroDrawn = gba->video.frameskipCounter <= 0;
+\t}
+#endif
+\tcore->runFrame(core);
+\tunsigned width, height;
+\tcore->desiredVideoDimensions(core, &width, &height);
+\tvideoCallback(r2retroDrawn ? outputBuffer : NULL, width, height, BYTES_PER_PIXEL * 256);'''
+assert libretro.count(old) == 1
+libretro = libretro.replace(old, new)
 lp = root / 'src/platform/libretro/libretro.c'
 if lp.read_text() != libretro:
     lp.write_text(libretro)
@@ -115,7 +159,7 @@ cmake -S "$BUILD/mgba-source" -B "$MGBA_BUILD" \
 cmake --build "$MGBA_BUILD" --target mgba_libretro --parallel "$JOBS" > "$BUILD/mgba.log" 2>&1 || { tail -n 70 "$BUILD/mgba.log"; exit 1; }
 python3 "$ROOT/scripts/namespace-handheld-core.py" sameboy "$BUILD/sameboy_libretro.a" "$BUILD/lib/libsameboy_libretro.a"
 python3 "$ROOT/scripts/namespace-handheld-core.py" mgba "$MGBA_BUILD/mgba_libretro.a" "$BUILD/lib/libmgba_libretro.a"
-printf 'sameboy %s\nmgba %s\nplatform %s\nsameboy_audio_rate 48000\nmgba_libretro_linkage STATIC\nmgba_sram_getter active_after_deferred_setup\nflags %s\n' "$SAMEBOY_REV" "$MGBA_REV" "$TARGET" "$COMMON_FLAGS" > "$BUILD/provenance.txt"
+printf 'sameboy %s\nmgba %s\nplatform %s\nsameboy_audio_rate 48000\nsameboy_dmg_palette r2retro_color\nmgba_libretro_linkage STATIC\nmgba_sram_getter active_after_deferred_setup\nmgba_video_duplicates native_frameskip_counter\nflags %s\n' "$SAMEBOY_REV" "$MGBA_REV" "$TARGET" "$COMMON_FLAGS" > "$BUILD/provenance.txt"
 "$CC" --version | head -n 1 >> "$BUILD/provenance.txt"
 sha256sum "$BUILD/lib/"*.a > "$BUILD/cores.sha256"
 mkdir -p "$BUILD/licenses"

@@ -61,10 +61,24 @@ std::string hex(uint64_t value) {
 double milliseconds(Clock::duration duration) {
     return std::chrono::duration<double, std::milli>(duration).count();
 }
-GamepadInput scriptedInput(unsigned vi, bool scripted) {
+GamepadInput scriptedInput(unsigned vi, bool scripted, SystemType system = SystemType::Unknown, bool console = false) {
     GamepadInput input{};
     input.connected = true;
     if (!scripted) return input;
+    if (console) {
+        // Separate traces in emulated frames. Button names are frontend
+        // controls; no assumption that these inputs complete a level.
+        if (system == SystemType::NintendoEntertainmentSystem) {
+            input.start = (vi>=1800 && vi<1812) || (vi>=2000 && vi<2012);
+            if (vi>=2200 && (vi-2200)%120<12) input.buttons |= 1u<<RETRO_DEVICE_ID_JOYPAD_B; // NES A
+            if (vi>=2800 && vi<4000) input.buttons |= 1u<<RETRO_DEVICE_ID_JOYPAD_RIGHT;
+        } else {
+            input.start = (vi>=600 && vi<612) || (vi>=900 && vi<912);
+            if (vi>=1200 && (vi-1200)%180<12) input.buttons |= 1u<<RETRO_DEVICE_ID_JOYPAD_B; // SNES B
+            if (vi>=2400 && vi<3600) input.buttons |= 1u<<RETRO_DEVICE_ID_JOYPAD_RIGHT;
+        }
+        return input;
+    }
     // Fixed generic trace, counted in emulated VIs, never wall-clock seconds.
     // Wait for the startup/title transition before pressing Start. An earlier
     // pulse is legitimately ignored by games that are still booting.
@@ -201,13 +215,13 @@ int main(int argc, char** argv) {
     fs::path run;
     try {
         require(argc >= 7 && argc <= 11,
-            "Usage: rom_probe ROM output-dir cached|auto lle|hle 1|4 frames [intro|scripted] [sessions:1|2] [shared|fresh] [off|profile]");
+            "Usage: rom_probe ROM output-dir cached|auto lle|hle 1|4 frames [intro|scripted|console] [sessions:1|2] [shared|fresh] [off|profile]");
         const fs::path rom = fs::absolute(argv[1]);
         const fs::path output = fs::absolute(argv[2]);
         const std::string cpu = argv[3], audio = argv[4], scenario = argc >= 8 ? argv[7] : "intro";
         require(cpu == "cached" || cpu == "auto", "CPU must be cached or auto");
         require(audio == "lle" || audio == "hle", "Audio must be lle or hle");
-        require(scenario == "intro" || scenario == "scripted", "Scenario must be intro or scripted");
+        require(scenario == "intro" || scenario == "scripted" || scenario == "console", "Scenario must be intro, scripted or console");
         const unsigned workers = number(argv[5], 1, 4), frames = number(argv[6], 1, 36000);
         const unsigned sessions = argc >= 9 ? number(argv[8], 1, 2) : 1;
         const std::string dataMode = argc >= 10 ? argv[9] : "shared";
@@ -233,10 +247,19 @@ int main(int argc, char** argv) {
         Emulator core;
         const EmulationConfig config{workers, cpu == "auto" ? CpuMode::Automatic : CpuMode::CachedInterpreter, audio == "hle", measurement == "profile"};
         std::string error;
+        std::string inputTrace = scenario == "intro" ? "neutral" :
+            "Start VI 600..611; frontend Cross VI 840..851 and every 120 thereafter; analog movement/camera from VI 4800";
         for (unsigned session = 1; session <= sessions; ++session) {
             const auto sessionData = dataMode == "fresh" ? run / ("data-session-" + std::to_string(session)) : data;
             const auto loadedAt = Clock::now();
             require(core.load(rom.string(), sessionData.string(), log, error, config), "ROM load failed: " + error);
+            if(scenario=="console") {
+                require(core.system()==SystemType::NintendoEntertainmentSystem || core.system()==SystemType::SuperNintendo,
+                        "Console trace requires NES/SNES");
+                inputTrace = core.system()==SystemType::NintendoEntertainmentSystem ?
+                    "NES: Start frames 1800..1811,2000..2011; A 12/120 frames from 2200; Right 2800..3999" :
+                    "SNES: Start frames 600..611,900..911; B 12/180 frames from 1200; Right 2400..3599";
+            }
             const double loadMs = milliseconds(Clock::now() - loadedAt);
             const auto sessionStart = Clock::now();
             auto phaseStart = sessionStart;
@@ -246,7 +269,7 @@ int main(int argc, char** argv) {
             AudioTail audioTail;
             for (unsigned vi = 1; vi <= frames; ++vi) {
                 const auto begin = Clock::now();
-                require(core.run(scriptedInput(vi, scenario == "scripted"), error), "Emulation failed: " + error);
+                require(core.run(scriptedInput(vi, scenario != "intro",core.system(),scenario=="console"), error), "Emulation failed: " + error);
                 const double coreMs = milliseconds(Clock::now() - begin);
                 phase.add(coreMs, core.frame(), core.audio());
                 total.add(coreMs, core.frame(), core.audio());
@@ -278,7 +301,7 @@ int main(int argc, char** argv) {
                 const auto replay = [&]() {
                     uint64_t digest = HashBasis;
                     for (unsigned step = 1; step <= 60; ++step) {
-                        require(core.run(scriptedInput(frames + step, scenario == "scripted"), error), error);
+                        require(core.run(scriptedInput(frames + step, scenario != "intro",core.system(),scenario=="console"), error), error);
                         for (const auto pixel : core.frame().pixels) hashWord(digest, pixel & 0xFFFFFF);
                     }
                     return digest;
@@ -298,7 +321,7 @@ int main(int argc, char** argv) {
                << ",\n  \"workers\": " << workers << ",\n  \"scenario\": " << quoted(scenario)
                << ",\n  \"session_data_mode\": " << quoted(dataMode)
                << ",\n  \"component_profiling\": " << (config.profileCore ? "true" : "false")
-               << ",\n  \"input_trace\": " << quoted(scenario == "intro" ? "neutral" : "Start VI 600..611; A VI 840..851 and every 120 thereafter; analog movement/camera from VI 4800")
+               << ",\n  \"input_trace\": " << quoted(inputTrace)
                << ",\n  \"ps4_measured\": false,\n  \"core_timing_excludes_capture_and_hash\": true,\n  \"sessions\": [\n";
         for (size_t i = 0; i < summaries.size(); ++i) report << (i ? ",\n" : "") << "    " << summaries[i];
         report << "\n  ],\n  \"captures\": [";

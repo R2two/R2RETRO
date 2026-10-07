@@ -4,14 +4,14 @@
 <p align="center">Seis sistemas clásicos. Una biblioteca. Una interfaz inspirada en XMB.</p>
 
 <p align="center">
-  <img alt="Versión experimental" src="https://img.shields.io/badge/versi%C3%B3n-0.5.5%20experimental-8957e5">
+  <img alt="Versión experimental" src="https://img.shields.io/badge/versi%C3%B3n-0.5.6%20experimental-8957e5">
   <img alt="PS4 homebrew" src="https://img.shields.io/badge/plataforma-PS4%20homebrew-0070d1">
   <img alt="C++17 y SDL2" src="https://img.shields.io/badge/stack-C%2B%2B17%20%2B%20SDL2-00bcd4">
   <img alt="Licencia del código" src="https://img.shields.io/badge/c%C3%B3digo-GPL--3.0--or--later-238636">
 </p>
 
 <p align="center">
-  <a href="https://github.com/R2two/R2RETRO/releases/tag/v0.5.5"><b>Descargar PKG</b></a> ·
+  <a href="https://github.com/R2two/R2RETRO/releases/tag/v0.5.6"><b>Descargar PKG</b></a> ·
   <a href="docs/USER-GUIDE.md">Guía de uso</a> ·
   <a href="docs/ROADMAP.md">Próximos pasos</a> ·
   <a href="https://github.com/R2two/R2RETRO/issues">Reportar un problema</a>
@@ -25,7 +25,7 @@
 
 ![Biblioteca XMB de R2RETRO, captura desktop v0.4.2](docs/media/xmb-v042.png)
 
-*Biblioteca y navegación XMB: captura real del frontend desktop v0.4.2. La descarga actual es v0.5.5.*
+*Biblioteca y navegación XMB: captura real del frontend desktop v0.4.2. La descarga actual es v0.5.6.*
 
 | Nintendo 64 · GPU + HLE | SNES · marco opcional |
 |---|---|
@@ -58,32 +58,32 @@
 - **Diagnóstico N64:** programa de prueba original incluido, medición opcional y prueba GPU manual.
 - **DualShock 4:** navegación, pausa y controles por sistema. Actualmente un mando, sin vibración.
 
-### Novedades de v0.5.5
+### Novedades de v0.5.6
 
-Shaders LCD/CRT opcionales, SRAM/RTC desde pausa y frameskip nativo GBA. Cloudflare DoH fijo para actualizaciones y Libretro. Logos de consola revisados, biblioteca por carpetas y nuevo fondo retro. Se conservan partidas, configuración e identidad de instalación.
+**Color GB on/off** desde L3+R3: paleta de cuatro colores combinable con LCD/CRT, con retorno a la paleta anterior. Ajustes de región NES y diagnósticos NES/SNES ampliados, reutilización de texturas y cuadros duplicados de mGBA. Corrección de rutas del instalador y Acerca de con autoría Rtwo / R2 y Ko-fi.
 
-La actualización integra los cambios locales posteriores a v0.5.1. Sigue siendo experimental: no hay prueba física de v0.5.5 ni mejora N64 medida.
+52/52 pruebas locales aprobadas y PKG PS4 validado. **Instala esta primera corrección manualmente por USB o FTP + Package Installer HDD, sin desinstalar.** La autoactualización sobre sí misma y el funcionamiento de v0.5.6 en PS4 quedan pendientes; no hay nueva mejora de velocidad N64 medida.
 
-[Notas de versión](docs/releases/v0.5.5.md) · [Detalle y pruebas](docs/CORE-DISPLAY-IMPROVEMENTS.md) · [Historial](CHANGELOG.md)
+[Notas de versión](docs/releases/v0.5.6.md) · [Color GB](docs/GB-COLORIZATION.md) · [Historial](CHANGELOG.md)
 
 ## Descargar e instalar
 
-**[R2RETRO v0.5.5 — PKG y verificación](https://github.com/R2two/R2RETRO/releases/tag/v0.5.5)**
+**[R2RETRO v0.5.6 — PKG y verificación](https://github.com/R2two/R2RETRO/releases/tag/v0.5.6)**
 
 | Dato | Valor |
 |---|---|
-| Paquete | `R2RETRO-v0.5.5-display-network.pkg` |
+| Paquete | `R2RETRO-v0.5.6-color-stability.pkg` |
 | Tamaño exacto | 65,994,752 bytes · 62.94 MiB |
 | Tipo | Pre-release experimental para PS4 homebrew |
-| Title ID / SFO | `RNTD00064` / `00.55` |
+| Title ID / SFO | `RNTD00064` / `00.56` |
 | Datos compatibles | `/data/R2N64` |
 
 ```text
 SHA-256
-1f6fef9555d84a13baba7f91c48b7bb09d6c5782b9cbb80ac174fadea6bbf6c9
+1d0b3f1ae2580fc9ee0218606206da0bc53e3029e481535038393e1d607172be
 ```
 
-1. Descarga el `.pkg` desde **Releases** y compara su SHA-256 con el [archivo de verificación](docs/releases/R2RETRO-v0.5.5-display-network.pkg.sha256).
+1. Descarga el `.pkg` desde **Releases** y compara su SHA-256 con el [archivo de verificación](docs/releases/R2RETRO-v0.5.6-color-stability.pkg.sha256).
 2. En una PS4 con un entorno homebrew compatible y GoldHEN ya configurado, instala el paquete con su instalador de PKG y abre **R2RETRO**. La combinación exacta de firmware/GoldHEN soportada no está certificada.
 3. Para una primera comprobación sin juegos, abre **Acerca de → Prueba Nintendo 64**.
 4. Coloca tus ROMs propias en `/data/R2N64/roms/` o en `R2N64/roms/` dentro de un USB reconocido por la consola.

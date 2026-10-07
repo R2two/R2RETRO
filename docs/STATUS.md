@@ -1,17 +1,70 @@
 # Estado de desarrollo — 7 de octubre de 2026
 
-## v0.5.5 — empaquetado autorizado
+## v0.5.6 — paquete Color GB y estabilidad
+
+Compilación y publicación autorizadas por el usuario. Compilaciones desktop y
+PS4 terminadas; 52/52 CTest aprobados en una pasada (125,80 s). Adaptador PS4
+simulado y validador/worker nativo/backend PS4 pasan ASan/UBSan. PKG extraído y
+verificado: 65.994.752 bytes, SFO00.56, SHA256
+`1d0b3f1ae2580fc9ee0218606206da0bc53e3029e481535038393e1d607172be`.
+Cliente acepta manifiesto y PKG. Evidencia: `build/v056-desktop-tests.log`,
+`build/v056-installer-sanitizers.log`, `build/v056-ps4-package.log`.
+
+Pokémon Red: seis sesiones GLES2 con marco, paleta clásica y Color GB+LCD/CRT.
+SMB3/SMW: 2×3.600 cuadros por juego, imagen/audio y replays correctos; vídeo NES
+repetible, vídeo SNES y PCM de ambos difieren entre sesiones. ROMs intactas,
+datos de prueba aislados en `build/v056-console-roms` y `build/v056-gb-color-smoke`.
+Sin prueba física nueva ni ganancia N64 medida. Primera instalación manual,
+sin desinstalar; BGFT sobre sí misma continúa pendiente. [Notas](releases/v0.5.6.md).
+
+## Preparación posterior a v0.5.5 — registro previo a la compilación v0.5.6
+
+Acerca de: autoría «Homebrew PS4 creado por Rtwo / R2», resumen de funciones,
+crédito a los núcleos y enlace de apoyo `https://ko-fi.com/rtwo_`. N64 GPU/perfiles
+y actualizador se indican experimentales. Texto preparado, sin compilar ni PKG.
+
+GB: interruptor Color GB de cuatro tonos preparado en pausa, persistente y
+compatible con LCD/CRT; al apagar recupera la paleta monocroma anterior. Parche
+acotado en la copia SameBoy, sin convertir a hardware GBC ni alterar ROMs.
+Pruebas fuente ampliadas, sin compilar/ejecutar. [Detalles](GB-COLORIZATION.md).
+
+NES/SNES: variantes diagnósticas NTSC/PAL, RAM mirrors, DMA/VRAM/BG1 y lectura
+automática de mando SNES preparadas; opciones originales explícitas y nueva
+traza de banco por consola. Sin compilar estos cambios. Binarios/fixtures
+anteriores pasan tres diagnósticos sintéticos; SMB3 traza tardía 2×6.000 y SMW
+2×3.600 muestran imagen/audio y pasan replays. PCM no idéntico entre sesiones;
+SMW difiere visualmente en ventana 361–480. Sin prueba física ni nuevo PKG.
+[Resultados y límites](NES-SNES-FIDELITY.md).
+
+El usuario informa descarga correcta pero fallo al pulsar Instalar y cerrar:
+`Instalador PS4: Ruta local (0xFFFFFFFF)`. El adaptador anterior agrupaba varias
+comprobaciones locales bajo ese error, antes de BGFT. Se sustituye la igualdad
+de dispositivo/inode entre `/data` y `/user/data` por verificación completa del
+PKG en cada ruta utilizada; errores locales indican operación, ruta y errno.
+No se conoce todavía cuál de las comprobaciones falló en la consola.
+
+También se prepara reutilización de texturas en pausa/cuadros duplicados,
+callbacks duplicados coherentes con frameskip mGBA y estadísticas de entregas
+de imagen separadas del ritmo emulado. Fuentes de pruebas ampliadas, **sin
+compilar ni ejecutar**. Ningún nuevo PKG, publicación o prueba física.
+[Alcance, limitaciones y verificaciones pendientes](POST-V055-STABILITY.md).
+
+## v0.5.5 — publicada en canal experimental
 
 El usuario autorizó compilar, empaquetar y publicar. Compilaciones desktop y PS4
 terminadas; 52 grupos CTest aprobados (51 en pasada completa y actualizador
 repetido tras adaptar su fixture para que represente una versión posterior).
 PKG extraído y validado, SHA-256 `1f6fef9555d84a13baba7f91c48b7bb09d6c5782b9cbb80ac174fadea6bbf6c9`,
 65994752 bytes, APP_VER00.55. Cliente verifica el manifiesto y el PKG real.
-Sin prueba física ni autoactualización física confirmada; no mejora N64 medida.
+El usuario confirmó instalación física correcta por FTP + Package Installer HDD
+de GoldHEN. El PKG anterior instalado se identificó como v0.5.4 por SHA256.
+El actualizador interno sigue sin instalación exitosa confirmada; no hay mejora
+N64 medida. [Procedimiento y alcance confirmado](PS4-INSTALL-V055.md). Publicación:
+https://github.com/R2two/R2RETRO/releases/tag/v0.5.5
 [Notas completas](releases/v0.5.5.md). Las secciones «sin compilar» inferiores
 conservan el estado histórico anterior a esta autorización.
 
-## Cambios pendientes de autorización para compilar
+## Historial previo al empaquetado v0.5.5
 
 Fuentes ampliadas con shaders LCD/CRT opcionales para GB/GBC/GBA/NES/SNES,
 guardado SRAM/RTC desde pausa y salto nativo mGBA 0/1/2. Preferencias antiguas
