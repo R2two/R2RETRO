@@ -1,5 +1,9 @@
 # R2RETRO
 
+**Versión actual: v0.5.5 experimental.** En pausa GB/GBC/GBA/NES/SNES se puede elegir Shader (LCD/CRT/apagado) y escribir SRAM/RTC. GBA añade salto de cuadros 0/1/2. Todo desactivado inicialmente salvo las preferencias anteriores. La SRAM no sustituye Guardar dentro del juego. Ajustes → Actualizaciones consulta el canal experimental; información/carátulas y actualizaciones usan Cloudflare DoH fijo, sin cambiar el DNS PS4. N64 inicia con perfil automático por identidad exacta; el resto conserva la base. [Notas y límites](releases/v0.5.5.md).
+
+Las secciones por versión siguientes describen su comportamiento histórico.
+
 Emulador homebrew de Nintendo 64, Game Boy, Game Boy Color, Game Boy Advance, NES y SNES para PlayStation 4, en C++17 y SDL2, con interfaz XMB.
 
 **v0.5.1 — GPU + HLE gráfico:** Ajustes → Gráficos de Nintendo 64 permite
@@ -69,7 +73,7 @@ Se conserva el fondo original aportado por el usuario y el arranque GLES2/Piglet
 
 ## Primera prueba de emulación
 
-1. Instalar `dist/R2RETRO-v0.5.1-gpu-hle.pkg` y abrir **R2RETRO**.
+1. Instalar `dist/R2RETRO-v0.5.5-display-network.pkg` y abrir **R2RETRO**.
 2. Ir a **Acerca de → Prueba Nintendo 64** y pulsar **X**. La prueba viene incluida; no necesita descargar ROMs.
 3. Comprobar las bandas roja, verde y azul, y un tono continuo de aproximadamente **500 Hz**. El cuadrado de la esquina superior izquierda pasa de negro a blanco al pulsar un botón N64 o mover un stick, y vuelve a negro al soltar.
 4. Pulsar **OPTIONS**, elegir **Continuar** y comprobar que imagen, entrada y sonido se reanudan.
@@ -193,13 +197,13 @@ Los scripts compilan el núcleo e incluyen el diagnóstico generado desde `scrip
 |---|---|
 | `build/ps4/R2RETRO.elf` | Ejecutable PS4 con el núcleo enlazado |
 | `build/ps4/eboot.bin` | SELF generado por OpenOrbis |
-| `dist/R2RETRO-v0.5.1-gpu-hle.pkg` | PKG multisistema con GPU N64 y HLE gráfico opcionales |
-| `dist/R2RETRO-v0.5.1-gpu-hle.pkg.sha256` | SHA-256 que genera el empaquetado |
+| `dist/R2RETRO-v0.5.5-display-network.pkg` | PKG multisistema con GPU N64 y HLE gráfico opcionales |
+| `dist/R2RETRO-v0.5.5-display-network.pkg.sha256` | SHA-256 que genera el empaquetado |
 | `dist/build-info.json` | Metadatos y estado de validación |
 | `build/desktop/r2n64` | Aplicación Linux/WSL |
 | `build/desktop/emulation-preview.png` | Captura de la prueba integrada GLES2 |
 
-Identidad: título **R2RETRO**, Title ID **RNTD00064**, Content ID `IV0001-RNTD00064_00-R2N64APP00000001`. El empaquetado v0.5.1 configura SFO `00.51`; no expresa una versión mínima de firmware verificada. Se conserva la identidad de instalación y datos de los paquetes anteriores.
+Identidad: título **R2RETRO**, Title ID **RNTD00064**, Content ID `IV0001-RNTD00064_00-R2N64APP00000001`. El empaquetado v0.5.5 configura SFO `00.55`; no expresa una versión mínima de firmware verificada. Se conserva la identidad de instalación y datos de los paquetes anteriores.
 
 ## Pruebas reproducibles y logs
 

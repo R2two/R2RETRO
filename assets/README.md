@@ -1,5 +1,12 @@
 # Recursos de R2RETRO
 
+## Logos de consolas
+
+`console-logos.png` reúne N64, GB, GBC, GBA, SNES y NES con transparencia real.
+Derivado con imagegen del JPG del usuario, con borde claro para fondos oscuros y
+texto inferior NES blanco; no se presenta como extracción idéntica del original.
+Procedencia y prompt: `docs/CONSOLE-LOGOS.md`. No cambia la titularidad de las marcas.
+
 ## Logo de la aplicación
 
 `logo.png` conserva íntegro el adjunto «Logotipo neón retro R2RETRO.png»
@@ -15,6 +22,14 @@ El empaquetador comprueba que el icono extraído del PKG coincida byte a byte.
 Este es el icono de la aplicación; el encabezado del XMB sigue siendo texto SDL.
 
 ## Fondo XMB
+
+`background-room.jpg` es el fondo predeterminado elegido por el usuario:
+copia íntegra de `C:/Users/R2A/Downloads/Gemini_Generated_Image_.jpg`.
+SHA-256: `86729674cc574927fe7d431899b6eb2156b66e52da9030abedeee49eceb85e6d`.
+El encuadre y contraste se aplican en SDL y se cachean por preset; el archivo
+original no se modifica. El empaquetador verifica el JPG extraído byte a byte.
+`background-home.png` conserva la propuesta generada anterior, ya no usada al
+arrancar. El primer `background.jpg` sigue como respaldo.
 
 `background.jpg` es una copia íntegra del adjunto aportado por el usuario el 5 de octubre de 2026:
 

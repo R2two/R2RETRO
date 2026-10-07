@@ -4,14 +4,14 @@
 <p align="center">Seis sistemas clásicos. Una biblioteca. Una interfaz inspirada en XMB.</p>
 
 <p align="center">
-  <img alt="Versión experimental" src="https://img.shields.io/badge/versi%C3%B3n-0.5.1%20experimental-8957e5">
+  <img alt="Versión experimental" src="https://img.shields.io/badge/versi%C3%B3n-0.5.5%20experimental-8957e5">
   <img alt="PS4 homebrew" src="https://img.shields.io/badge/plataforma-PS4%20homebrew-0070d1">
   <img alt="C++17 y SDL2" src="https://img.shields.io/badge/stack-C%2B%2B17%20%2B%20SDL2-00bcd4">
   <img alt="Licencia del código" src="https://img.shields.io/badge/c%C3%B3digo-GPL--3.0--or--later-238636">
 </p>
 
 <p align="center">
-  <a href="https://github.com/R2two/R2RETRO/releases/tag/v0.5.1"><b>Descargar PKG</b></a> ·
+  <a href="https://github.com/R2two/R2RETRO/releases/tag/v0.5.5"><b>Descargar PKG</b></a> ·
   <a href="docs/USER-GUIDE.md">Guía de uso</a> ·
   <a href="docs/ROADMAP.md">Próximos pasos</a> ·
   <a href="https://github.com/R2two/R2RETRO/issues">Reportar un problema</a>
@@ -21,11 +21,11 @@
 
 > **En desarrollo activo.** La versión publicada es experimental. Compilación y pruebas locales están documentadas; no se garantiza velocidad completa ni compatibilidad universal en PS4. El seguimiento de v0.5.1 informa rendimiento similar en consola, todavía sin un perfil físico detallado. No se incluyen juegos comerciales ni BIOS externas.
 
-## Así se ve
+## Menú
 
 ![Biblioteca XMB de R2RETRO, captura desktop v0.4.2](docs/media/xmb-v042.png)
 
-*Biblioteca y navegación XMB: captura real del frontend desktop v0.4.2. La descarga actual es v0.5.1.*
+*Biblioteca y navegación XMB: captura real del frontend desktop v0.4.2. La descarga actual es v0.5.5.*
 
 | Nintendo 64 · GPU + HLE | SNES · marco opcional |
 |---|---|
@@ -40,7 +40,7 @@
 
 | Sistema | Núcleo | Archivos | Situación actual |
 |---|---|---|---|
-| Nintendo 64 | Mupen64Plus-Next | `.z64` · `.v64` · `.n64` | Angrylion inicial; GLideN64 GPU con HLE gráfico o RSP LLE opcionales. Rendimiento PS4 en investigación. |
+| Nintendo 64 | Mupen64Plus-Next | `.z64` · `.v64` · `.n64` | Perfiles automáticos experimentales para Mario USA/Zelda USA1.2; GLideN64 GPU/HLE y Angrylion disponibles. Rendimiento PS4 en investigación. |
 | Game Boy | SameBoy | `.gb` | Paletas, marco, guardados, estados y avance rápido integrados. |
 | Game Boy Color | SameBoy | `.gbc` | Colores nativos, marco, guardados, estados y avance rápido integrados. |
 | Game Boy Advance | mGBA | `.gba` | Marco, guardados, estados y avance rápido; logs DMA agrupados. |
@@ -58,30 +58,32 @@
 - **Diagnóstico N64:** programa de prueba original incluido, medición opcional y prueba GPU manual.
 - **DualShock 4:** navegación, pausa y controles por sistema. Actualmente un mando, sin vibración.
 
-### Novedades de v0.5.1
+### Novedades de v0.5.5
 
-GLideN64 acelera tareas reconocidas mediante **HLE gráfico**, conservando CXD4 como respaldo. **GPU + RSP LLE** permite comparar. La pausa muestra tareas procesadas y tiempos opcionales del intercambio SDL/núcleo. **Angrylion continúa como modo inicial**; la selección GPU se aplica al cargar una ROM y no persiste al reiniciar la aplicación.
+Shaders LCD/CRT opcionales, SRAM/RTC desde pausa y frameskip nativo GBA. Cloudflare DoH fijo para actualizaciones y Libretro. Logos de consola revisados, biblioteca por carpetas y nuevo fondo retro. Se conservan partidas, configuración e identidad de instalación.
 
-[Notas de versión](docs/releases/v0.5.1.md) · [Evidencia técnica](docs/GPU-HLE-V051.md) · [Historial](CHANGELOG.md)
+La actualización integra los cambios locales posteriores a v0.5.1. Sigue siendo experimental: no hay prueba física de v0.5.5 ni mejora N64 medida.
+
+[Notas de versión](docs/releases/v0.5.5.md) · [Detalle y pruebas](docs/CORE-DISPLAY-IMPROVEMENTS.md) · [Historial](CHANGELOG.md)
 
 ## Descargar e instalar
 
-**[R2RETRO v0.5.1 — PKG y verificación](https://github.com/R2two/R2RETRO/releases/tag/v0.5.1)**
+**[R2RETRO v0.5.5 — PKG y verificación](https://github.com/R2two/R2RETRO/releases/tag/v0.5.5)**
 
 | Dato | Valor |
 |---|---|
-| Paquete | `R2RETRO-v0.5.1-gpu-hle.pkg` |
-| Tamaño exacto | 64.159.744 bytes · 61,19 MiB |
+| Paquete | `R2RETRO-v0.5.5-display-network.pkg` |
+| Tamaño exacto | 65,994,752 bytes · 62.94 MiB |
 | Tipo | Pre-release experimental para PS4 homebrew |
-| Title ID / SFO | `RNTD00064` / `00.51` |
+| Title ID / SFO | `RNTD00064` / `00.55` |
 | Datos compatibles | `/data/R2N64` |
 
 ```text
 SHA-256
-4889669f6e556fc8b229111be2f5a1c4f650ecbbdb66025bdfacf990f8bb4483
+1f6fef9555d84a13baba7f91c48b7bb09d6c5782b9cbb80ac174fadea6bbf6c9
 ```
 
-1. Descarga el `.pkg` desde **Releases** y compara su SHA-256 con el [archivo de verificación](docs/releases/R2RETRO-v0.5.1-gpu-hle.pkg.sha256).
+1. Descarga el `.pkg` desde **Releases** y compara su SHA-256 con el [archivo de verificación](docs/releases/R2RETRO-v0.5.5-display-network.pkg.sha256).
 2. En una PS4 con un entorno homebrew compatible y GoldHEN ya configurado, instala el paquete con su instalador de PKG y abre **R2RETRO**. La combinación exacta de firmware/GoldHEN soportada no está certificada.
 3. Para una primera comprobación sin juegos, abre **Acerca de → Prueba Nintendo 64**.
 4. Coloca tus ROMs propias en `/data/R2N64/roms/` o en `R2N64/roms/` dentro de un USB reconocido por la consola.

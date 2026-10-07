@@ -1,4 +1,5 @@
 #include "core/libretro_core.h"
+#include "n64_profiles.h"
 #include "frontend/system_detector.h"
 #include "log.h"
 #include "rom.h"
@@ -245,6 +246,7 @@ struct LibretroCore::State {
     const CoreApi* api;
     SystemType system = SystemType::Unknown;
     EmulationConfig config{};
+    const char* appliedProfile = "Manual";
     HardwareTiming boundaryTiming{};
     retro_pixel_format pixelFormat = RETRO_PIXEL_FORMAT_0RGB1555;
     std::string romPath, dataRoot, identity, stateBase, coreVersion;
@@ -578,17 +580,31 @@ struct LibretroCore::State {
             }
         }
     }
-    void persistSaves() {
-        if (!saveWritable) return;
+    bool persistSaves(std::string* report = nullptr) {
+        if (report) report->clear();
+        if (!saveWritable) {
+            if (report) *report = "Guardado protegido: la sesion no permite escribir SRAM/RTC.";
+            return false;
+        }
+        bool written = false, failed = false;
         for (const auto& save : saves) {
-            if (!save.writable) continue;
             const void* memory = api->get_memory_data(save.id);
             const size_t size = api->get_memory_size(save.id);
-            if (!memory || !size || size > MaxSaveBytes) continue;
+            if (!size) continue;
             std::string error;
-            if (atomicWrite(save.path, memory, size, error)) log->write("INFO", "Guardado escrito: " + save.path);
-            else log->write("ERROR", error);
+            if (!save.writable) error = "Guardado anterior protegido; no se sobrescribe: " + save.path;
+            else if (!memory || size > MaxSaveBytes) error = "Memoria de guardado no valida: " + save.path;
+            else if (atomicWrite(save.path, memory, size, error)) {
+                written = true;
+                log->write("INFO", "Guardado escrito: " + save.path);
+                continue;
+            }
+            failed = true;
+            log->write("ERROR", error);
+            if (report && report->empty()) *report = error;
         }
+        if (report && !written && !failed) *report = "Este cartucho no expone memoria SRAM/RTC para guardar.";
+        return written && !failed;
     }
     std::array<unsigned char, StateHeaderSize> stateHeader(size_t size, uint64_t hash) const {
         std::array<unsigned char, StateHeaderSize> header{};
@@ -670,6 +686,7 @@ bool LibretroCore::load(const std::string& romPath, const std::string& dataRoot,
     s.fps = 60;
     s.rate = 44100;
     s.config = config;
+    s.appliedProfile = "Manual";
     s.boundaryTiming = {};
     if (s.n64() && config.graphics != N64Graphics::Software && config.graphics != N64Graphics::Gles2) {
         error = "El backend grafico no es valido."; return false;
@@ -681,6 +698,9 @@ bool LibretroCore::load(const std::string& romPath, const std::string& dataRoot,
     s.options.clear();
     if (s.system == SystemType::GameBoy && config.gbPalette >= GameBoyPaletteCount) {
         error = "La paleta de Game Boy no es valida."; return false;
+    }
+    if (s.system == SystemType::GameBoyAdvance && config.gbaFrameskip > 2) {
+        error = "Salto de cuadros GBA fuera de rango (0 a 2)."; return false;
     }
     if (s.n64() && (config.workers != 1 && config.workers != 4)) {
         error = "El perfil grafico requiere 1 o 4 trabajadores."; return false;
@@ -726,11 +746,18 @@ bool LibretroCore::load(const std::string& romPath, const std::string& dataRoot,
         std::copy_n(s.rom.data(), header.size(), header.begin());
         if (!parseHeader(header, game, error)) return false;
         s.identity = game.id + "-" + cartridgeFingerprint(s.rom, game.order);
+        s.appliedProfile = applyN64Profile(s.identity, s.rom.size(), config);
+        s.config = config;
+        log.write("INFO", std::string("N64 profile: ") + s.appliedProfile + "; identity=" + s.identity);
     } else {
         s.identity = std::string(systemId(s.system)) + "-" + cartridgeFingerprint(s.rom, RomOrder::BigEndian);
         game.title = systemName(s.system);
         game.id = s.identity;
     }
+    // Reserve the existing bounded callback budget during load, avoiding vector
+    // growth in the emulation path without changing PCM or callback limits.
+    try { s.audio.reserve(MaxAudioSamples); }
+    catch (...) { error = "No hay memoria suficiente para el buffer de audio."; return false; }
     const auto saveBase = s.saveDirectory + "/" + s.identity;
     s.saves.push_back({RETRO_MEMORY_SAVE_RAM, saveBase + ".srm",
                       s.n64() ? dataRoot + "/saves/" + s.identity + ".srm" : "", true});
@@ -743,7 +770,7 @@ bool LibretroCore::load(const std::string& romPath, const std::string& dataRoot,
         {"mupen64plus-ThreadedRenderer", "False"}, {"mupen64plus-alt-map", "disabled"}, {"mupen64plus-pak1", "memory"}
     };
     else if (s.system == SystemType::GameBoyAdvance) s.options = {
-        {"mgba_use_bios", "OFF"}, {"mgba_frameskip", "0"}
+        {"mgba_use_bios", "OFF"}, {"mgba_frameskip", std::to_string(config.gbaFrameskip)}
     };
     else if (s.system == SystemType::GameBoy || s.system == SystemType::GameBoyColor)
         s.options = {{"sameboy_model", "Auto"}, {"sameboy_border", "never"}};
@@ -947,6 +974,8 @@ uint64_t LibretroCore::graphicsLleTasks() const {
     return state_->loaded && state_->gpu() && state_->api->graphics_lle_tasks ? state_->api->graphics_lle_tasks() : 0;
 }
 HardwareTiming LibretroCore::hardwareTiming() const { return state_->boundaryTiming; }
+EmulationConfig LibretroCore::effectiveConfig() const { return state_->config; }
+const char* LibretroCore::profileName() const { return state_->appliedProfile; }
 bool LibretroCore::supportsSaveStates() const {
     if (!state_->loaded || State::active != state_.get() || !state_->failure.empty() || !state_->ran) return false;
     // The hybrid N64 audio extension has auxiliary state outside upstream
@@ -1038,6 +1067,28 @@ bool LibretroCore::setGameBoyPalette(unsigned palette, std::string& error) {
     s.config.gbPalette = palette;
     s.optionsUpdated = true;
     return true;
+}
+bool LibretroCore::setGbaFrameskip(unsigned frameskip, std::string& error) {
+    error.clear();
+    auto& s = *state_;
+    if (!s.loaded || State::active != &s || !s.failure.empty() || s.system != SystemType::GameBoyAdvance) {
+        error = "El salto de cuadros requiere una sesion GBA activa."; return false;
+    }
+    if (frameskip > 2) { error = "Salto de cuadros GBA fuera de rango (0 a 2)."; return false; }
+    try { s.options["mgba_frameskip"] = std::to_string(frameskip); }
+    catch (...) { error = "No hay memoria para cambiar el salto de cuadros."; return false; }
+    s.config.gbaFrameskip = frameskip;
+    s.optionsUpdated = true;
+    return true;
+}
+bool LibretroCore::saveBattery(std::string& error) {
+    error.clear();
+    auto& s = *state_;
+    if (!s.loaded || State::active != &s || !s.failure.empty() || s.n64()) {
+        error = "No hay una sesion GB/GBC/GBA/NES/SNES activa para guardar SRAM/RTC."; return false;
+    }
+    try { return s.persistSaves(&error); }
+    catch (...) { error = "No se pudo completar el guardado SRAM/RTC."; return false; }
 }
 bool LibretroCore::reset(std::string& error) {
     error.clear();

@@ -164,3 +164,19 @@ the same address, bounds, audio enabled/disabled and session reset. Admission is
 stubbed in this unit fixture; real GLideN64 classification is separately exercised
 by opt-in Mario/Zelda runs. No ROM or commercial microcode is added to the patch.
 This conservative gate does not imply universal microcode/game compatibility.
+
+## 0009: resumed graphics tasks and blank cartridge names
+
+The hybrid dispatcher additionally checks `OS_TASK_YIELDED` (task flags bit 0).
+A resumed task can start at the boot PC, so checking SP_PC alone was insufficient:
+its saved RSP state must be handled by CXD4 instead of a new HLE display list.
+`OS_TASK_DP_WAIT` (bit 1) remains eligible when the other admission checks pass.
+The original scalar RSP fixture reproduces the wrong HLE dispatch before this
+patch and passes through the real interpreter afterwards.
+
+GLideN64's ROM-name trimming now checks length before indexing its last byte.
+An empty name or one containing only spaces previously indexed before the local
+buffer. `scripts/check-gpu-rom-name.py` compiles the actual prepared-source
+decoding block with ASan/UBSan and original empty/padded/full-length headers.
+It reproduces the out-of-bounds access before this patch. No new game-specific
+microcode profiles or framebuffer compatibility shortcuts are enabled.

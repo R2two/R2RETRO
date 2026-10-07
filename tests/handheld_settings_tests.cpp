@@ -20,7 +20,8 @@ void require(bool condition, const char* description) {
 bool equal(const HandheldSettings& a, const HandheldSettings& b) {
     return a.fastForward == b.fastForward && a.stateSlot == b.stateSlot &&
            a.integerScaling == b.integerScaling && a.linearFilter == b.linearFilter &&
-           a.gbPalette == b.gbPalette && a.overlay == b.overlay && a.showStats == b.showStats;
+           a.gbPalette == b.gbPalette && a.overlay == b.overlay && a.showStats == b.showStats &&
+           a.shader == b.shader && a.gbaFrameskip == b.gbaFrameskip;
 }
 std::string read(const fs::path& path) {
     std::ifstream file(path, std::ios::binary);
@@ -64,7 +65,12 @@ int main() {
                 "default round trip failed");
         require(defaults.overlay, "overlay should be enabled by default");
         require(defaults.showStats, "performance HUD should be enabled by default");
-        const std::string legacy = replace(replace(baseline, ",\n  \"overlay\": true", ""),
+        const auto previous = replace(replace(baseline, ",\n  \"shader\": 0", ""), ",\n  \"gbaFrameskip\": 0", "");
+        write(gb, previous);
+        loaded.shader = loaded.gbaFrameskip = 2;
+        require(loadHandheldSettings(root.string(), SystemType::GameBoy, loaded, error) && equal(loaded, defaults),
+                "previous preferences must default shaders and frameskip off");
+        const std::string legacy = replace(replace(previous, ",\n  \"overlay\": true", ""),
                                            ",\n  \"showStats\": true", "");
         write(gb, legacy);
         loaded.overlay = loaded.showStats = false;
@@ -77,8 +83,8 @@ int main() {
         require(loadHandheldSettings(root.string(), SystemType::GameBoy, loaded, error) && equal(loaded, defaults),
                 "v0.3.2 settings did not default statistics on");
         write(gb, baseline);
-        const HandheldSettings color{4, 3, false, true, 1, false, false};
-        const HandheldSettings advance{8, 4, true, false, 3};
+        const HandheldSettings color{4, 3, false, true, 1, false, false, 1, 0};
+        const HandheldSettings advance{8, 4, true, false, 3, true, true, 2, 2};
         require(saveHandheldSettings(root.string(), SystemType::GameBoyColor, color, error), "GBC save failed");
         require(saveHandheldSettings(root.string(), SystemType::GameBoyAdvance, advance, error), "GBA save failed");
         require(loadHandheldSettings(root.string(), SystemType::GameBoyColor, loaded, error) && equal(loaded, color),
@@ -144,6 +150,12 @@ int main() {
                  replace(baseline, "\"fastForward\": 2", "\"fastForward\": 4294967298"),
                  replace(baseline, "\"stateSlot\": 0", "\"stateSlot\": 5"),
                  replace(baseline, "\"gbPalette\": 0", "\"gbPalette\": 4"),
+                 replace(baseline, "\"shader\": 0", "\"shader\": 3"),
+                 replace(baseline, "\"shader\": 0", "\"shader\": true"),
+                 replace(baseline, "\"shader\": 0", "\"shader\": 1, \"shader\": 2"),
+                 replace(baseline, "\"gbaFrameskip\": 0", "\"gbaFrameskip\": 3"),
+                 replace(baseline, "\"gbaFrameskip\": 0", "\"gbaFrameskip\": -1"),
+                 replace(baseline, "\"gbaFrameskip\": 0", "\"gbaFrameskip\": \"1\""),
                  replace(baseline, "\"integerScaling\": true", "\"integerScaling\": 1"),
                  replace(baseline, "\"linearFilter\": false", "\"linearFilter\": \"false\""),
                  replace(baseline, "\"overlay\": true", "\"overlay\": 1"),

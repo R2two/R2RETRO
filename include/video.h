@@ -1,5 +1,6 @@
 #pragma once
 #include "gpu_probe.h"
+#include "gpu_session.h"
 #include "core/system_type.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
@@ -49,6 +50,9 @@ public:
     // presentation without artwork. Unknown/false clears the selection.
     bool setHandheldOverlay(SystemType system, bool enabled, std::string& error);
     bool handheldOverlayActive() const { return overlayIndex_ >= 0; }
+    bool setDisplayShader(unsigned mode, std::string& error);
+    unsigned displayShaderMode() const { return displayShader_ ? displayShader_->mode() : 0; }
+    const std::string& displayShaderError() const { return displayShaderError_; }
     // Selection/upload and drawing are different states. Drawn means the last
     // frame submitted both artwork and game; the detail reports a bounded
     // readback check performed once after selection, not on every frame.
@@ -64,6 +68,8 @@ public:
     // Fits cached artwork inside the rectangle, preserving aspect and alpha.
     // No file access, image decoding or texture creation during drawing.
     bool libraryArtwork(int x, int y, int w, int h);
+    // Cached transparent console textures, loaded before sandbox changes.
+    bool consoleLogo(SystemType system, int x, int y, int w, int h, uint8_t alpha = 255);
     void releaseGameFrame();
     bool snapshot(const std::string& path);
     // Explicit paused action only: read back the composed frame before drawing
@@ -87,7 +93,11 @@ private:
     SDL_Surface* background_ = nullptr;
     SDL_Renderer* renderer_ = nullptr;
     SDL_Texture* gameTexture_ = nullptr;
+    std::unique_ptr<DisplayShader> displayShader_;
+    std::string displayShaderError_;
     SDL_Texture* libraryTexture_ = nullptr;
+    // One bounded, padded texture per console; decoded from the same PNG once.
+    std::array<SDL_Texture*, 6> consoleLogos_{};
     int libraryWidth_ = 0, libraryHeight_ = 0;
     std::string libraryKey_;
     unsigned gameWidth_ = 0, gameHeight_ = 0;

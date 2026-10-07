@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/iHaiDeeZ/DolphinPS4.git",
+  "revision": "6b0c6bdfde673c214245250181b1584b2c914787",
+  "dolphin_repository": "https://github.com/dolphin-emu/dolphin.git",
+  "dolphin_revision": "771fb154059c5812d6a715a23226249cc42877a2",
+  "mesa_version": "26.0.8",
+  "llvm_runtime_version": "21.1.6",
+  "libdrm_headers_version": "2.4.125",
+  "status": "audited_source_only_not_integrated"
+}

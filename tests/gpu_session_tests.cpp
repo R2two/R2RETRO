@@ -12,6 +12,11 @@
 namespace {
 bool failCompiler=false, failFramebuffer=false;
 unsigned sessionReadbacks=0;
+unsigned capabilityWrites=0;
+void (GL_APIENTRY *realEnable)(GLenum)=nullptr;
+void (GL_APIENTRY *realDisable)(GLenum)=nullptr;
+void GL_APIENTRY testEnable(GLenum cap) { ++capabilityWrites; realEnable(cap); }
+void GL_APIENTRY testDisable(GLenum cap) { ++capabilityWrites; realDisable(cap); }
 void (GL_APIENTRY *realGetBooleanv)(GLenum,GLboolean*)=nullptr;
 GLenum (GL_APIENTRY *realFramebufferStatus)(GLenum)=nullptr;
 void (GL_APIENTRY *realReadPixels)(GLint,GLint,GLsizei,GLsizei,GLenum,GLenum,void*)=nullptr;
@@ -29,6 +34,14 @@ void GL_APIENTRY testReadPixels(GLint x,GLint y,GLsizei w,GLsizei h,GLenum forma
 extern "C" void* __real_SDL_GL_GetProcAddress(const char* name);
 extern "C" void* __wrap_SDL_GL_GetProcAddress(const char* name) {
     void* result=__real_SDL_GL_GetProcAddress(name);
+    if (!std::strcmp(name,"glEnable")) {
+        realEnable=reinterpret_cast<decltype(realEnable)>(result);
+        return reinterpret_cast<void*>(testEnable);
+    }
+    if (!std::strcmp(name,"glDisable")) {
+        realDisable=reinterpret_cast<decltype(realDisable)>(result);
+        return reinterpret_cast<void*>(testDisable);
+    }
     if (!std::strcmp(name,"glGetBooleanv")) {
         realGetBooleanv=reinterpret_cast<decltype(realGetBooleanv)>(result);
         return reinterpret_cast<void*>(testGetBooleanv);
@@ -163,6 +176,9 @@ int main(int argc,char** argv) {
         gpu=std::make_unique<GpuSession>(window,renderer);
         const auto originalContext=SDL_GL_GetCurrentContext();
         if (software) {
+            r2n64::DisplayShader effect(window, renderer);
+            require(effect.select(0, error) && !effect.select(1, error) && effect.mode() == 0,
+                    "Software renderer must keep display shader disabled");
             require(!gpu->prepare(64,48,true,false,error) && !error.empty() && !gpu->ready() && !gpu->framebuffer(),
                     "Software renderer must decline without touching UI");
             drawUi(renderer,ui);
@@ -185,6 +201,13 @@ int main(int argc,char** argv) {
             require(!gpu->prepare(641,480,true,false,error) && gpu->ready() && gpu->framebuffer()==fbo,
                     "Invalid dimensions lost existing GPU resources");
             GL gl(*gpu);
+            const auto initialState=state(gl);
+            capabilityWrites=0;
+            require(gpu->begin(error) && gpu->end(error),error);
+            require(state(gl)==initialState,"differential restore changed untouched frontend state");
+            require(capabilityWrites<18,"unchanged GL capabilities must not be rewritten at every boundary");
+            std::printf("Boundary capability writes: %u (full restore: 18)\n",capabilityWrites);
+            require(!gpu->driverDescription().empty(),"GPU driver description missing");
             GLuint buffer=0,texture=0;
             std::vector<GLint> previousCore;
             for (unsigned frame=0;frame<6;++frame) {
@@ -266,6 +289,33 @@ int main(int argc,char** argv) {
             drawUi(renderer,ui);
             require(gpu->prepare(64,48,false,false,error),error);
             gpu->reset(); drawUi(renderer,ui);
+            {
+                r2n64::DisplayShader effect(window, renderer);
+                require(SDL_RenderSetLogicalSize(renderer, 128, 96) == 0, "Shader logical canvas");
+                const unsigned readsBefore = sessionReadbacks;
+                for (unsigned mode : {1u, 2u, 0u, 1u, 0u}) {
+                    require(SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255) == 0, "Shader test color");
+                    require(SDL_RenderFillRect(renderer, nullptr) == 0 && SDL_RenderFlush(renderer) == 0, "Shader test canvas");
+                    const auto before = state(gl);
+                    require(effect.select(mode, error), error);
+                    require(state(gl) == before, "Shader selection altered SDL state");
+                    require(effect.draw(16, 12, SDL_Rect{16,12,96,72}, error), error);
+                    require(state(gl) == before, "Display shader did not restore SDL state");
+                    require(sessionReadbacks == readsBefore, "Display shader performed a readback");
+                    const auto shaded = pixels(renderer);
+                    unsigned darkened = 0;
+                    for (unsigned y = 0; y < 96; ++y) for (unsigned x = 0; x < 128; ++x) {
+                        const auto rgb = shaded[y*128+x] & 0xffffff;
+                        if (!mode || x < 16 || x >= 112 || y < 12 || y >= 84)
+                            require(rgb == 0xffffff, "Shader affected artwork/UI outside the game, or off changed output");
+                        else darkened += rgb != 0xffffff;
+                    }
+                    require(!mode || darkened > 100, "Selected display shader has no visible effect");
+                    drawUi(renderer, ui);
+                }
+                require(!effect.select(3, error) && effect.mode() == 0, "Invalid shader mode accepted");
+            }
+            drawUi(renderer, ui);
         }
         gpu.reset(); SDL_DestroyTexture(ui); ui=nullptr;
         SDL_DestroyRenderer(renderer); renderer=nullptr; SDL_DestroyWindow(window); window=nullptr; SDL_Quit();

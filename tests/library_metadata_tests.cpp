@@ -173,7 +173,7 @@ void replaceBytes(Bytes& bytes, const std::string& old, const std::string& value
 
 namespace r2n64 {
 bool httpGet(const std::string& url, size_t maxBytes, const std::string& caFile,
-             const std::atomic<bool>& cancel, std::vector<uint8_t>& body, std::string& error) {
+             const std::atomic<bool>& cancel, std::vector<uint8_t>& body, std::string& error, const HttpOptions&) {
     body.clear();
     error.clear();
     transport.urls.push_back(url);

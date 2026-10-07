@@ -26,6 +26,14 @@ int main() {
         for (unsigned i = 0; i < 30; ++i) slow.add(1000.0 / 30, 60, 25, 5);
         near(slow.speedPercent(), 50, "30 VI/s for 60 Hz must be 50% speed");
         near(slow.intervalsPerSecond(), 30, "interval frequency is not game FPS");
+        near(slow.overBudgetSteps,30,"slow VI work exceeds the 60 Hz budget");
+        near(ntsc.overBudgetSteps,0,"pacing sleep must not count as expensive emulation");
+        near(slow.peakCoreMs,25,"peak core cost");
+        near(slow.peakPresentMs,5,"peak presentation cost");
+        auto batch=slow;
+        batch.add(100,60,90,10,8);
+        near(batch.measuredSingleSteps,30,"fast-forward batches excluded from individual VI peaks");
+        near(batch.peakCoreMs,25,"batch cost is not a per-VI peak");
         r2n64::PlaybackSpeed speed;
         r2n64::EmulationPerformance fast;
         for (unsigned factor : {2u, 4u, 8u}) {

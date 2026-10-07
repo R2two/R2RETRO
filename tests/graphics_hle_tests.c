@@ -23,6 +23,7 @@ static void session(void) {
 }
 static void graphics(void) {
     task(0); dmem[0xfc0/4] = 1;
+    dmem[0xfc4/4] = 0;
     dmem[0xfd0/4] = 0x4000; dmem[0xfd8/4] = 0x1000;
     dmem[0xff0/4] = 0x2000; dmem[0xff4/4] = 16;
 }
@@ -53,6 +54,12 @@ int main(void) {
     graphics(); dmem[0xff4/4] = 0xfffffff8; hleDoRspCycles(123);
     graphics(); regs[8] = 4; hleDoRspCycles(123);
     assert(drawings == 1 && queries == 2);
+    /* A yielded task restarts at the boot PC too; PC alone cannot admit it. */
+    graphics(); dmem[0xfc4/4] = 1; hleDoRspCycles(123);
+    assert(drawings == 1 && queries == 2 && dmem[0x80/4] == 0x1234);
+    /* DP_WAIT is not YIELDED: keep supported fresh graphics accelerated. */
+    graphics(); dmem[0xfc4/4] = 2; hleDoRspCycles(123);
+    assert(drawings == 2 && queries == 3 && !dmem[0x80/4]);
     hleRomClosed(); hleRomClosed();
     assert(hleDoRspCycles(123) == 0);
     session(); assert(!retro_r2n64_audio_hle_tasks()); hleRomClosed();

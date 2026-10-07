@@ -30,11 +30,15 @@ public:
     uint64_t graphicsHleTasks() const;
     uint64_t graphicsLleTasks() const;
     HardwareTiming hardwareTiming() const;
+    EmulationConfig effectiveConfig() const;
+    const char* profileName() const;
     bool supportsSaveStates() const;
     bool saveState(std::string& error, unsigned slot = 0);
     bool loadState(std::string& error, unsigned slot = 0);
     // Applies at the next run; does not reset the cartridge or mutate saves.
     bool setGameBoyPalette(unsigned palette, std::string& error);
+    bool setGbaFrameskip(unsigned frameskip, std::string& error);
+    bool saveBattery(std::string& error);
     bool reset(std::string& error);
     bool usingRecompiler() const;
     // The running backend, including a core-side fallback after load.

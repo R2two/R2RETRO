@@ -64,10 +64,14 @@ public:
     uint64_t graphicsHleTasks() const override;
     uint64_t graphicsLleTasks() const override;
     HardwareTiming hardwareTiming() const override;
+    EmulationConfig effectiveConfig() const override;
+    const char* profileName() const override;
     bool supportsSaveStates() const override;
     bool saveState(std::string&, unsigned slot = 0) override;
     bool loadState(std::string&, unsigned slot = 0) override;
     bool setGameBoyPalette(unsigned, std::string&) override;
+    bool setGbaFrameskip(unsigned, std::string&) override;
+    bool saveBattery(std::string&) override;
     bool reset(std::string&) override;
 private:
     struct State;

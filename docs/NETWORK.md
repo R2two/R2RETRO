@@ -1,5 +1,11 @@
 # Descargas HTTPS
 
+Cambio posterior a v0.5.4, todavía sin compilar: Cloudflare DoH fijo para todo
+`httpGet/httpDownload`, incluidos RDB y Boxart/Snap/Title de Libretro. Sin
+selector ni fallback al DNS del sistema; bootstrap 1.1.1.1/1.0.0.1 únicamente
+para cloudflare-dns.com, TLS/CA/hostname verificados. No modifica DNS PS4.
+La configuración de red alternativa existe solo en el target de pruebas HTTP.
+
 `include/http.h` y `src/http.cpp` proporcionan `r2n64::httpGet`. La operación es
 bloqueante y pertenece al trabajador de descargas de la aplicación. El catálogo
 decide qué recursos de Libretro solicitar y dónde guardar el resultado; la

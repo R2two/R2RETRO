@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
@@ -16,8 +17,8 @@ TITLE_ID = "RNTD00064"
 CONTENT_ID = f"IV0001-{TITLE_ID}_00-R2N64APP00000001"
 # Preserve installed application/save identity when changing the public brand.
 APP_TITLE = "R2RETRO"
-VERSION = "0.5.1"
-SFO_VERSION = "00.51"
+VERSION = "0.5.5"
+SFO_VERSION = "00.55"
 OVERLAYS = {"gb": "gb.png", "gbc": "gbc.png", "gba": "gba.png", "snes": "snes.jpg"}
 
 
@@ -79,7 +80,14 @@ def main():
         return result.stdout
 
     payload = args.build / "payload"
+    # Incremental app/package builds must include the patches actually used by
+    # the rebuilt core, even when build.sh did not restage notices this time.
+    subprocess.run([sys.executable, str(ROOT / "scripts/stage-core-licenses.py"),
+                    str(payload / "licenses")], check=True)
     shutil.copy2(args.build / "eboot.bin", payload / "eboot.bin")
+    # Refresh the home artwork for incremental package builds as well.
+    shutil.copy2(ROOT / "assets/background-room.jpg", payload / "assets/background-room.jpg")
+    shutil.copy2(ROOT / "assets/console-logos.png", payload / "assets/console-logos.png")
     # Test cartridges belong outside the payload. Only our original bundled
     # N64 diagnostic is allowed; opt-in user ROMs must never enter a package.
     cartridge_extensions = {".gb", ".gbc", ".gba", ".z64", ".v64", ".n64", ".nes", ".sfc", ".smc", ".fds"}
@@ -129,6 +137,8 @@ def main():
         payloads = {"uroot/eboot.bin": args.build / "eboot.bin",
                     "uroot/assets/diagnostic.z64": ROOT / "assets/diagnostic.z64",
                     "uroot/assets/background.jpg": ROOT / "assets/background.jpg",
+                    "uroot/assets/background-room.jpg": ROOT / "assets/background-room.jpg",
+                    "uroot/assets/console-logos.png": ROOT / "assets/console-logos.png",
                     "icon0.png": ROOT / "pkg/icon0.png",
                     "uroot/assets/fonts/DejaVuSans.ttf": ROOT / "assets/fonts/DejaVuSans.ttf"}
         for filename in OVERLAYS.values():
@@ -145,18 +155,31 @@ def main():
         raise RuntimeError("Missing ELF output")
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    destination = dist / f"R2RETRO-v{VERSION}-gpu-hle.pkg"
+    destination = dist / f"R2RETRO-v{VERSION}-display-network.pkg"
     shutil.copy2(package, destination)
     shutil.copy2(elf, args.build / "R2RETRO.elf")
     digest = hashlib.sha256(destination.read_bytes()).hexdigest()
     (dist / (destination.name + ".sha256")).write_text(f"{digest}  {destination.name}\n")
     (dist / "build-info.json").write_text(json.dumps({
-        "version": VERSION, "milestone": "ps4-hybrid-graphics-hle", "title": APP_TITLE,
+        "version": VERSION, "milestone": "display-network-preview", "title": APP_TITLE,
+        "display_shaders": "optional-GLES2-LCD-grid-CRT-scanlines; per-system; default-off; GB-GBC-GBA-NES-SNES",
+        "gba_frameskip": "native-mGBA-0-1-2; default-off; per-system",
+        "manual_cartridge_save": "paused-SRAM-RTC; atomic-per-file; GB-GBC-GBA-NES-SNES",
+        "console_logo_upload": "six-POT-ARGB8888-textures; explicit-checked-upload; vector-fallback",
         "title_id": TITLE_ID, "compatible_data_root": "/data/R2N64",
         "handheld_features": ["fast-forward-2-4-8", "five-state-slots", "gb-palettes", "video-options", "per-system-preferences", "optional-system-overlays", "optional-performance-hud"],
         "app_features": ["paused-png-capture-per-system", "libretro-direct-https-metadata", "offline-library-artwork", "optional-snes-overlay", "r2retro-brand", "ps4-verified-path-file-operations", "scanner-operation-errors", "verified-assets-after-sandbox-transition", "ca-read-diagnostics", "compressed-overlays-before-goldhen", "opaque-xrgb-game-texture", "paused-video-buffer-diagnostic"],
         "library_sources": ["https://github.com/libretro/libretro-database", "https://github.com/libretro-thumbnails/libretro-thumbnails"],
         "library_downloads": "manual-selected-game; verified-TLS; background-worker; local-cache",
+        "updater": {"channel_default": "experimental", "automatic_check": True,
+                    "dns": "fixed-Cloudflare-DoH; updates-and-libretro-catalog; no-user-override",
+                    "diagnostics": "stage-elapsed; cooperative-cancel-45s-check-watchdog",
+                    "transport": "HTTPS-stream-to-disk; SHA256; bounded-PKG-SFO",
+                    "installation": "BGFT-local-storage; explicit-confirmation; no-uninstall",
+                    "ps4_self_update_verified": False},
+        "console_folders": True, "n64_automatic_profiles": "experimental-exact-identity-Mario-USA-Zelda-USA1.2",
+        "home_background_sha256": hashlib.sha256((ROOT / "assets/background-room.jpg").read_bytes()).hexdigest(),
+        "console_logos_sha256": hashlib.sha256((ROOT / "assets/console-logos.png").read_bytes()).hexdigest(),
         "ca_bundle_sha256": hashlib.sha256((ROOT / "assets/certs/cacert.pem").read_bytes()).hexdigest(),
         "core_diagnostics": "aggregate-exact-mgba-dma-info-preserve-warnings-errors",
         "overlay_sha256": {system: hashlib.sha256((ROOT / f"assets/overlays/{filename}").read_bytes()).hexdigest()
@@ -173,7 +196,7 @@ def main():
         "sfo": sfo, "pkg_bytes": destination.stat().st_size, "sha256": digest,
         "toolchain": str(args.toolchain), "package_validated": True,
         "ps4_hardware_tested": False, "n64_core_integrated": True,
-        "last_user_confirmed_boot_version": "0.2.1",
+        "last_user_confirmed_boot_version": "0.5.3",
         "core_revision": "12edd2c74a517ff86dfa8cfc71ad75e4c10486d5",
         "core_profile": "guarded_x64_dynarec/angrylion-4-workers/cxd4-sse2-audio-hle",
         "component_profiling_default": False, "gpu_probe_manual_only": True,
@@ -187,9 +210,12 @@ def main():
                          for path in sorted((ROOT / "external/patches").glob("*.patch"))},
     }, indent=2) + "\n")
     shutil.copy2(dist / "build-info.json", dist / f"build-info-v{VERSION}.json")
+    subprocess.run([sys.executable, str(ROOT / "scripts/prepare-update.py"), "--pkg", str(destination),
+                    "--build-info", str(dist / "build-info.json"), "--channel", "experimental",
+                    "--notes", "Cloudflare fijo para actualizaciones y Libretro; logos revisados; shaders LCD/CRT, guardado SRAM/RTC en pausa y frameskip GBA opcionales. Experimental: prueba PS4 pendiente.",
+                    "--output", str(dist / f"update-v{VERSION}-experimental.txt")], check=True)
     print(f"PKG validado: {destination} ({destination.stat().st_size} bytes)")
 
 
 if __name__ == "__main__":
     main()
-

@@ -187,6 +187,7 @@ int main(int argc, char** argv) {
         std::string error;
         require(!emulator.supportsSaveStates() && !emulator.saveState(error) && !emulator.loadState(error) && !emulator.reset(error),
                 "Session operations accepted without a ROM");
+        require(!emulator.saveBattery(error) && !emulator.setGbaFrameskip(1, error), "Sessionless cartridge operation accepted");
         const std::array<SystemType, 3> systems{{SystemType::GameBoy, SystemType::GameBoyColor, SystemType::GameBoyAdvance}};
         std::array<Game, 3> games;
         std::array<fs::path, 3> states;
@@ -233,6 +234,12 @@ int main(int argc, char** argv) {
 
             auto memory = saveRam(system);
             memory.data[256] = static_cast<unsigned char>(0xa0 + index);
+            const auto beforeFlush = cartridgeStatus(system);
+            require(emulator.saveBattery(error), "Explicit SRAM/RTC save: " + error);
+            require(cartridgeStatus(system) == beforeFlush, "Saving SRAM advanced the cartridge");
+            const auto savedBattery = readBytes(data / "saves" / systemId(system) / (games[index].id + ".srm"));
+            require(savedBattery.size() == memory.size && savedBattery[256] == 0xa0 + index,
+                    "SRAM was not written before unload");
             require(emulator.supportsSaveStates(), "Core does not expose save states after run");
             require(!emulator.loadState(error, SaveStateSlotCount - 1), "Missing state slot was accepted");
             require(emulator.saveState(error), "Save state: " + error);
@@ -254,6 +261,17 @@ int main(int argc, char** argv) {
                     ", counter " + std::to_string(first[step].ram[5]) + "/" + std::to_string(second[step].ram[5]) +
                     ", inputs " + std::to_string(first[step].ram[6]) + "/" + std::to_string(second[step].ram[6]));
             require(!emulator.audio().empty(), "State replay lost audio");
+            if (system == SystemType::GameBoyAdvance) {
+                require(!emulator.setGbaFrameskip(3, error), "Invalid GBA frameskip accepted");
+                for (unsigned skip : {1u, 2u, 0u}) {
+                    require(emulator.loadState(error), error);
+                    require(emulator.setGbaFrameskip(skip, error), error);
+                    const auto skipped = sequence(emulator, system, error);
+                    for (size_t i = 0; i < first.size(); ++i)
+                        require(first[i].ram == skipped[i].ram, "GBA frameskip changed CPU/input progress");
+                    require(!emulator.audio().empty(), "GBA frameskip lost PCM");
+                }
+            } else require(!emulator.setGbaFrameskip(1, error), "GBA frameskip applied to a different core");
             require(emulator.loadState(error), "Restore before fast-forward: " + error);
             const auto accelerated = sequence(emulator, system, error, true);
             require(first == accelerated, "Fast-forward changed cartridge RAM or video at the same emulated frame");
@@ -415,6 +433,30 @@ int main(int argc, char** argv) {
                               << releasedPcm.size() << " samples), 120 video/RAM observations identical\n";
                 }
             }
+        }
+        // Fresh sessions also avoid host resampler history in frameskip PCM checks.
+        std::vector<std::array<unsigned char, 8>> referenceRam;
+        std::vector<int16_t> referenceAudio;
+        for (unsigned skip : {0u, 1u, 2u}) {
+            EmulationConfig config;
+            config.gbaFrameskip = skip;
+            const auto testData = data / ("gba-frameskip-" + std::to_string(skip));
+            require(emulator.load(argv[3], testData.string(), log, error, config), error);
+            std::vector<std::array<unsigned char, 8>> observedRam;
+            std::vector<int16_t> observedAudio;
+            for (unsigned frame = 0; frame < 420; ++frame) {
+                GamepadInput pad = neutral;
+                if (frame >= 380 && frame < 400) pad.buttons = 1u << RETRO_DEVICE_ID_JOYPAD_B;
+                require(emulator.run(pad, error), error);
+                if (frame >= 360) {
+                    observedRam.push_back(cartridgeStatus(SystemType::GameBoyAdvance));
+                    observedAudio.insert(observedAudio.end(), emulator.audio().begin(), emulator.audio().end());
+                }
+            }
+            emulator.unload();
+            if (!skip) { referenceRam = observedRam; referenceAudio = observedAudio; }
+            else require(observedRam == referenceRam && !observedAudio.empty() && observedAudio == referenceAudio,
+                         "Native GBA frameskip changed CPU/input or PCM at equal emulated time");
         }
         std::cout << "PASS: original GB/GBC/GBA CPU/video/PSG/input, SRAM persistence, five state slots/replay/rejection, live GB palettes, muted speed/release PCM parity, reset, GB->GBC->GBA->N64->GB switches.\n"
                   << "Artifacts and isolated saves: " << data << '\n';

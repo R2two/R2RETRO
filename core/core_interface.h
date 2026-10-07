@@ -27,6 +27,8 @@ struct EmulationConfig {
     N64Graphics graphics = N64Graphics::Software;
     HardwareVideoHost* hardware = nullptr; // Borrowed; ignored in software mode.
     bool graphicsHle = true; // Only GLideN64: recognized graphics, CXD4 otherwise.
+    bool automaticProfile = false; // Frontend opt-in; explicit test/core callers stay manual.
+    unsigned gbaFrameskip = 0; // mGBA only; preserve CPU/APU execution while reducing drawing.
 };
 struct HardwareTiming { double beginMs = 0, endMs = 0; uint64_t calls = 0; };
 struct CoreFrame {
@@ -59,10 +61,14 @@ public:
     virtual uint64_t graphicsHleTasks() const { return 0; }
     virtual uint64_t graphicsLleTasks() const { return 0; }
     virtual HardwareTiming hardwareTiming() const { return {}; }
+    virtual EmulationConfig effectiveConfig() const { return {}; }
+    virtual const char* profileName() const { return "Manual"; }
     virtual bool supportsSaveStates() const = 0;
     virtual bool saveState(std::string& error, unsigned slot = 0) = 0;
     virtual bool loadState(std::string& error, unsigned slot = 0) = 0;
     virtual bool setGameBoyPalette(unsigned palette, std::string& error) = 0;
+    virtual bool setGbaFrameskip(unsigned, std::string& error) { error = "Salto de cuadros no disponible."; return false; }
+    virtual bool saveBattery(std::string& error) { error = "Guardado de cartucho no disponible."; return false; }
     virtual bool reset(std::string& error) = 0;
 };
 }

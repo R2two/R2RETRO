@@ -43,7 +43,7 @@ HandheldSettings defaultsFor(SystemType system) {
 }
 bool valuesValid(const HandheldSettings& value) {
     return (value.fastForward == 2 || value.fastForward == 4 || value.fastForward == 8) &&
-           value.stateSlot <= 4 && value.gbPalette <= 3;
+           value.stateSlot <= 4 && value.gbPalette <= 3 && value.shader <= 2 && value.gbaFrameskip <= 2;
 }
 
 // Native desktop walks use descriptors; PS4 uses verified absolute paths through
@@ -170,6 +170,12 @@ public:
             } else if (key == "showStats") {
                 if (value.kind != Scalar::Kind::Boolean) return false;
                 result.showStats = value.boolean;
+            } else if (key == "shader") {
+                if (value.kind != Scalar::Kind::Integer) return false;
+                result.shader = value.integer;
+            } else if (key == "gbaFrameskip") {
+                if (value.kind != Scalar::Kind::Integer) return false;
+                result.gbaFrameskip = value.integer;
             }
             if (take('}')) break;
             if (!take(',')) return false;
@@ -383,7 +389,9 @@ bool saveHandheldSettings(const std::string& root, SystemType system,
         ",\n  \"linearFilter\": " + (settings.linearFilter ? "true" : "false") +
         ",\n  \"gbPalette\": " + std::to_string(settings.gbPalette) +
         ",\n  \"overlay\": " + (settings.overlay ? "true" : "false") +
-        ",\n  \"showStats\": " + (settings.showStats ? "true" : "false") + "\n}\n";
+        ",\n  \"showStats\": " + (settings.showStats ? "true" : "false") +
+        ",\n  \"shader\": " + std::to_string(settings.shader) +
+        ",\n  \"gbaFrameskip\": " + std::to_string(settings.gbaFrameskip) + "\n}\n";
     size_t written = 0;
     bool ok = true;
     while (written < source.size()) {

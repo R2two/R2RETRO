@@ -9,6 +9,8 @@ namespace r2n64 {
 struct EmulationPerformance {
     uint64_t intervals = 0;
     double elapsedMs = 0, emulatedMs = 0, coreMs = 0, presentMs = 0;
+    double peakCoreMs = 0, peakPresentMs = 0;
+    uint64_t measuredSingleSteps = 0, overBudgetSteps = 0;
 
     void add(double elapsed, double nominalHz, double core, double present, unsigned steps = 1) {
         if (!std::isfinite(elapsed) || elapsed <= 0 ||
@@ -20,6 +22,13 @@ struct EmulationPerformance {
         emulatedMs += steps * 1000.0 / nominalHz;
         coreMs += core;
         presentMs += present;
+        // Fast-forward batches are not individual VI timings.
+        if (steps == 1) {
+            ++measuredSingleSteps;
+            if (core + present > 1000.0 / nominalHz) ++overBudgetSteps;
+            if (core > peakCoreMs) peakCoreMs = core;
+            if (present > peakPresentMs) peakPresentMs = present;
+        }
     }
     double speedPercent() const { return elapsedMs > 0 ? emulatedMs * 100.0 / elapsedMs : 0; }
     double intervalsPerSecond() const { return elapsedMs > 0 ? intervals * 1000.0 / elapsedMs : 0; }

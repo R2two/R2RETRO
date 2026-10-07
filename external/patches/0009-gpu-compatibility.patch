@@ -1,0 +1,27 @@
+--- a/mupen64plus-rsp-hle/src/plugin.c
++++ b/mupen64plus-rsp-hle/src/plugin.c
+@@ -211,7 +211,9 @@
+     bytes = *dmem_u32(&g_hle, TASK_DATA_SIZE);
+     /* Inspect without changing guest state. Resume/yielded tasks and all
+      * unrecognized graphics remain LLE. No address-only microcode cache. */
+-    if (graphics && (*g_hle.sp_pc & 0xfff) == 0 &&
++    /* OS_TASK_YIELDED may resume through the boot PC: retain its saved RSP state. */
++    if (graphics && !(*dmem_u32(&g_hle, TASK_FLAGS) & 1u) &&
++        (*g_hle.sp_pc & 0xfff) == 0 &&
+         *dmem_u32(&g_hle, TASK_UCODE_BOOT_SIZE) <= 0x1000 &&
+         code <= 0x800000 - 4096 && data <= 0x800000 - 2048 &&
+         list && !(list & 7) && list < 0x800000 && !(bytes & 7) &&
+--- a/GLideN64/src/RSP.cpp
++++ b/GLideN64/src/RSP.cpp
+@@ -280,8 +280,9 @@
+ 	romname[20] = 0;
+ 
+ 	// remove all trailing spaces
+-	while (romname[strlen(romname) - 1] == ' ')
+-		romname[strlen(romname) - 1] = 0;
++	size_t nameLength = strlen(romname);
++	while (nameLength && romname[nameLength - 1] == ' ')
++		romname[--nameLength] = 0;
+ 
+ 	if (strcmp(RSP.romname, romname) != 0)
+ 		TFH.shutdown();

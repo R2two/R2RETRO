@@ -118,18 +118,38 @@ struct Transfer {
     size_t limit;
     bool exceeded = false;
     bool allocationFailed = false;
+    int fd = -1;
+    std::atomic<uint64_t>* received = nullptr;
+    size_t written = 0;
+    bool writeFailed = false;
+    const HttpOptions* options = nullptr;
+    CURL* curl = nullptr;
 };
 
 size_t receive(char* source, size_t width, size_t count, void* opaque) noexcept {
     auto& transfer = *static_cast<Transfer*>(opaque);
     if (transfer.cancel.load(std::memory_order_relaxed)) return 0;
+    if (transfer.options) transfer.options->report(HttpStage::Receiving);
     if ((width && count > std::numeric_limits<size_t>::max() / width) ||
-        width * count > transfer.limit - transfer.bytes.size()) {
+        width * count > transfer.limit - transfer.written) {
         transfer.exceeded = true;
         return 0;
     }
     const size_t length = width * count;
     if (!length) return 0;
+    if (transfer.fd >= 0) {
+        size_t offset = 0;
+        while (offset < length) {
+            if (transfer.cancel) return 0;
+            const auto n = ::write(transfer.fd, source + offset, length - offset);
+            if (n < 0 && errno == EINTR) continue;
+            if (n <= 0) { transfer.writeFailed = true; return 0; }
+            offset += size_t(n);
+        }
+        transfer.written += length;
+        if (transfer.received) *transfer.received = transfer.written;
+        return length;
+    }
     try {
         const size_t wanted = transfer.bytes.size() + length;
         if (wanted > transfer.bytes.capacity()) {
@@ -138,6 +158,7 @@ size_t receive(char* source, size_t width, size_t count, void* opaque) noexcept 
             transfer.bytes.reserve(std::max(wanted, capacity + growth));
         }
         transfer.bytes.insert(transfer.bytes.end(), source, source + length);
+        transfer.written += length;
     } catch (...) {
         // Exceptions must not cross libcurl's C callback boundary.
         transfer.allocationFailed = true;
@@ -147,7 +168,15 @@ size_t receive(char* source, size_t width, size_t count, void* opaque) noexcept 
 }
 
 int progress(void* opaque, curl_off_t, curl_off_t, curl_off_t, curl_off_t) noexcept {
-    return static_cast<Transfer*>(opaque)->cancel.load(std::memory_order_relaxed) ? 1 : 0;
+    auto& transfer = *static_cast<Transfer*>(opaque);
+    if(transfer.cancel.load(std::memory_order_relaxed)) return 1;
+    if(transfer.options && transfer.curl && !transfer.written) {
+        double connected=0, tls=0;
+        curl_easy_getinfo(transfer.curl,CURLINFO_CONNECT_TIME,&connected);
+        curl_easy_getinfo(transfer.curl,CURLINFO_APPCONNECT_TIME,&tls);
+        transfer.options->report(tls>0?HttpStage::Response:connected>0?HttpStage::Tls:HttpStage::DnsConnect);
+    }
+    return 0;
 }
 
 bool validUrl(const std::string& url) {
@@ -176,7 +205,7 @@ std::string curlError(CURLcode code) {
         return "La descarga supero el tiempo de espera o la conexion es demasiado lenta.";
     case CURLE_COULDNT_RESOLVE_HOST:
     case CURLE_COULDNT_RESOLVE_PROXY:
-        return "No se pudo resolver el servidor. Revisa la conexion y DNS.";
+        return "No se pudo resolver el servidor mediante Cloudflare HTTPS. Revisa la conexion, fecha y certificados CA.";
     case CURLE_COULDNT_CONNECT:
         return "No se pudo conectar al servidor HTTPS.";
     case CURLE_TOO_MANY_REDIRECTS:
@@ -193,10 +222,37 @@ std::string curlError(CURLcode code) {
         return "Fallo de descarga HTTPS (curl " + std::to_string(static_cast<int>(code)) + ").";
     }
 }
+
+CURLcode perform(CURL* easy, Transfer& transfer, const HttpOptions& options) {
+    // easy_perform does not call the parent's progress callback regularly while
+    // an internal DoH handle waits. Drive multi explicitly so cancellation is
+    // observed even during DNS/TLS stalls, without abandoning a live worker.
+    std::unique_ptr<CURLM, decltype(&curl_multi_cleanup)> multi(curl_multi_init(),curl_multi_cleanup);
+    if(!multi) return CURLE_OUT_OF_MEMORY;
+    if(curl_multi_add_handle(multi.get(),easy)!=CURLM_OK) return CURLE_FAILED_INIT;
+    CURLcode result=CURLE_FAILED_INIT;
+    while(true) {
+        if(transfer.cancel.load(std::memory_order_relaxed)) { result=CURLE_ABORTED_BY_CALLBACK; break; }
+        int running=0;
+        if(curl_multi_perform(multi.get(),&running)!=CURLM_OK) break;
+        int remaining=0; bool complete=false;
+        while(auto* message=curl_multi_info_read(multi.get(),&remaining)) {
+            if(message->msg==CURLMSG_DONE && message->easy_handle==easy) {
+                result=message->data.result; complete=true;
+            }
+        }
+        if(complete || !running) break;
+        if(curl_multi_poll(multi.get(),nullptr,0,100,nullptr)!=CURLM_OK) break;
+    }
+    options.report(HttpStage::Cleanup);
+    curl_multi_remove_handle(multi.get(),easy);
+    return result;
+}
 }
 
-bool httpGet(const std::string& url, size_t maxBytes, const std::string& caFile,
-             const std::atomic<bool>& cancel, std::vector<uint8_t>& body, std::string& error) {
+static bool request(const std::string& url, size_t maxBytes, const std::string& caFile,
+             const std::atomic<bool>& cancel, std::vector<uint8_t>& body, std::string& error,
+             int fd, std::atomic<uint64_t>* downloaded, const HttpOptions& options) {
     body.clear();
     error.clear();
     if (cancel.load(std::memory_order_relaxed)) { error = "Descarga cancelada."; return false; }
@@ -204,28 +260,53 @@ bool httpGet(const std::string& url, size_t maxBytes, const std::string& caFile,
     if (!maxBytes || maxBytes > static_cast<uint64_t>(std::numeric_limits<curl_off_t>::max())) {
         error = "El limite de descarga no es valido."; return false;
     }
+    options.report(HttpStage::Certificates);
     if (!readableCa(caFile, error)) return false;
+    options.report(HttpStage::Network);
     RequestLease lease;
     if (!lease.acquire(error)) return false;
     // A fresh buffer caps retained capacity independently of an earlier request.
     std::vector<uint8_t> received;
     Transfer transfer{cancel, received, maxBytes};
+    transfer.fd = fd;
+    transfer.received = downloaded;
+    transfer.options = &options;
+    // RESOLVE populates curl's request-local DNS cache, also used by DoH's
+    // internal handles. Keep the list alive through easy cleanup.
+    std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)> bootstrap(nullptr, curl_slist_free_all);
     // Keep callback state alive until after curl_easy_cleanup on every exit.
     std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curl(curl_easy_init(), curl_easy_cleanup);
     if (!curl) { error = "No se pudo crear la descarga HTTPS."; return false; }
+    transfer.curl = curl.get();
     auto set = [&](CURLoption key, auto value) { return curl_easy_setopt(curl.get(), key, value) == CURLE_OK; };
     bool configured = set(CURLOPT_URL, url.c_str()) &&
         set(CURLOPT_HTTPGET, 1L) && set(CURLOPT_FOLLOWLOCATION, 1L) && set(CURLOPT_MAXREDIRS, 3L) &&
         set(CURLOPT_DISALLOW_USERNAME_IN_URL, 1L) && set(CURLOPT_NETRC, long(CURL_NETRC_IGNORED)) &&
         set(CURLOPT_SSL_VERIFYPEER, 1L) && set(CURLOPT_SSL_VERIFYHOST, 2L) &&
         set(CURLOPT_SSLVERSION, long(CURL_SSLVERSION_TLSv1_2)) && set(CURLOPT_CAINFO, caFile.c_str()) &&
-        set(CURLOPT_NOSIGNAL, 1L) && set(CURLOPT_CONNECTTIMEOUT, 12L) && set(CURLOPT_TIMEOUT, 40L) &&
+        set(CURLOPT_NOSIGNAL, 1L) && set(CURLOPT_CONNECTTIMEOUT, 12L) && set(CURLOPT_TIMEOUT, fd >= 0 ? 1800L : 40L) &&
         set(CURLOPT_LOW_SPEED_LIMIT, 1024L) && set(CURLOPT_LOW_SPEED_TIME, 10L) &&
         set(CURLOPT_MAXFILESIZE_LARGE, static_cast<curl_off_t>(maxBytes)) && set(CURLOPT_FAILONERROR, 1L) &&
         set(CURLOPT_ACCEPT_ENCODING, "identity") && set(CURLOPT_USERAGENT, "R2RETRO/HTTPS") &&
         set(CURLOPT_WRITEFUNCTION, receive) && set(CURLOPT_WRITEDATA, &transfer) &&
         set(CURLOPT_XFERINFOFUNCTION, progress) && set(CURLOPT_XFERINFODATA, &transfer) &&
         set(CURLOPT_NOPROGRESS, 0L);
+    const char* dohEndpoint="https://cloudflare-dns.com/dns-query";
+    const char* dohBootstrap="cloudflare-dns.com:443:1.1.1.1,1.0.0.1";
+#ifdef R2N64_HTTP_TESTING
+    dohEndpoint=options.dohEndpoint.c_str();
+    dohBootstrap=options.dohBootstrap.c_str();
+    if(!options.useSystemDns)
+#endif
+    {
+        if(*dohBootstrap) bootstrap.reset(curl_slist_append(nullptr,dohBootstrap));
+        // curl 7.80 DoH inherits CAINFO. Peer and host checks for its internal
+        // HTTPS handles are separate options, explicitly required here too.
+        configured = configured && validUrl(dohEndpoint) &&
+            (!*dohBootstrap || (bootstrap && set(CURLOPT_RESOLVE,bootstrap.get()))) &&
+            set(CURLOPT_DOH_URL, dohEndpoint) &&
+            set(CURLOPT_DOH_SSL_VERIFYPEER, 1L) && set(CURLOPT_DOH_SSL_VERIFYHOST, 2L);
+    }
 #if LIBCURL_VERSION_NUM >= 0x075500
     configured = configured && set(CURLOPT_PROTOCOLS_STR, "https") && set(CURLOPT_REDIR_PROTOCOLS_STR, "https");
 #else
@@ -234,18 +315,42 @@ bool httpGet(const std::string& url, size_t maxBytes, const std::string& caFile,
         set(CURLOPT_REDIR_PROTOCOLS, long(CURLPROTO_HTTPS));
 #endif
     if (!configured) { error = "El cliente HTTPS no admite la configuracion segura requerida."; return false; }
-    const CURLcode result = curl_easy_perform(curl.get());
+    options.report(HttpStage::DnsConnect);
+    const CURLcode result = perform(curl.get(),transfer,options);
     long status = 0;
     curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
+    options.report(HttpStage::Cleanup);
+    curl.reset(); // Diagnostic stays visible if a platform resolver takes time to join.
     if (cancel.load(std::memory_order_relaxed)) error = "Descarga cancelada.";
     else if (transfer.exceeded || result == CURLE_FILESIZE_EXCEEDED) error = "El archivo supera el limite de descarga.";
     else if (transfer.allocationFailed) error = "No hay memoria suficiente para la descarga.";
+    else if (transfer.writeFailed) error = "No se pudo escribir la descarga. Comprueba el espacio disponible.";
     else if (status >= 400) error = status == 404 ? "Archivo no encontrado (HTTP 404)." :
         "El servidor rechazo la descarga (HTTP " + std::to_string(status) + ").";
     else if (result != CURLE_OK) error = curlError(result);
+    else if (fd >= 0 && (status != 200 || transfer.written != maxBytes)) error = "El PKG recibido no tiene el tamaño esperado.";
     else if (status < 200 || status >= 300) error = "Respuesta HTTPS inesperada (HTTP " + std::to_string(status) + ").";
     else { body.swap(received); return true; }
     return false;
+}
+
+bool httpGet(const std::string& url, size_t maxBytes, const std::string& caFile,
+             const std::atomic<bool>& cancel, std::vector<uint8_t>& body, std::string& error,
+             const HttpOptions& options) {
+    return request(url, maxBytes, caFile, cancel, body, error, -1, nullptr, options);
+}
+bool httpDownload(const std::string& url, uint64_t exactBytes, const std::string& caFile,
+                  const std::atomic<bool>& cancel, int fd, std::atomic<uint64_t>& received,
+                  std::string& error, const HttpOptions& options) {
+    received = 0;
+    struct stat st{};
+    if (!exactBytes || exactBytes > 512ull * 1024 * 1024 || fd < 0 ||
+        ::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size != 0 ||
+        ::lseek(fd, 0, SEEK_CUR) != 0) {
+        error = "Destino o tamaño de descarga no válido."; return false;
+    }
+    std::vector<uint8_t> unused;
+    return request(url, size_t(exactBytes), caFile, cancel, unused, error, fd, &received, options);
 }
 
 void httpShutdown() {

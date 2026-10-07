@@ -7,6 +7,8 @@
 #include <stdexcept>
 #include <thread>
 #include <utility>
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace {
 void require(bool condition, const std::string& error) {
@@ -16,6 +18,36 @@ void require(bool condition, const std::string& error) {
 
 int main(int argc, char** argv) {
     try {
+        if((argc==6 || argc==7) && std::string(argv[1])=="--doh-smoke") {
+            std::atomic<bool> cancel{false}; std::atomic<r2n64::HttpStage> stage{r2n64::HttpStage::Idle};
+            r2n64::HttpOptions options; options.useSystemDns=false; options.dohEndpoint=argv[4]; options.stage=&stage;
+            if(argc==7) options.dohBootstrap=argv[6];
+            std::vector<uint8_t> bytes; std::string error;
+            const std::string expected=argv[5];
+            const auto started=std::chrono::steady_clock::now();
+            std::thread cancellation;
+            if(expected=="cancel") cancellation=std::thread([&]{std::this_thread::sleep_for(std::chrono::milliseconds(200));cancel=true;});
+            const bool ok=r2n64::httpGet(argv[2],4096,argv[3],cancel,bytes,error,options);
+            if(cancellation.joinable()) cancellation.join();
+            if(expected=="ok") require(ok && !bytes.empty(),error);
+            else {
+                require(!ok && bytes.empty() && !error.empty(),"DoH failure exposed body or succeeded");
+                if(expected=="404") require(error.find("404")!=std::string::npos,error);
+                if(expected=="cancel") require(error.find("cancelada")!=std::string::npos &&
+                    std::chrono::steady_clock::now()-started<std::chrono::seconds(5),"DoH cancellation unbounded");
+            }
+            std::cout<<"PASS: DoH "<<expected<<"; "<<r2n64::httpStageName(stage)<<"; "<<error<<'\n';
+            r2n64::httpShutdown(); return 0;
+        }
+        if (argc == 6 && std::string(argv[1]) == "--download-smoke") {
+            std::string error; std::atomic<bool> cancel{false}; std::atomic<uint64_t> bytes{0};
+            const int fd=::open(argv[5],O_RDWR|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
+            require(fd>=0,"Download smoke destination must not already exist");
+            const bool ok=r2n64::httpDownload(argv[2],std::stoull(argv[3]),argv[4],cancel,fd,bytes,error);
+            ::close(fd); require(ok,error);
+            std::cout<<"PASS: HTTPS stream received "<<bytes<<" bytes\n";
+            r2n64::httpShutdown(); return 0;
+        }
         if (argc == 4 && std::string(argv[1]) == "--smoke") {
             std::vector<uint8_t> bytes; std::string error; std::atomic<bool> cancel{false};
             require(r2n64::httpGet(argv[2], 4 * 1024 * 1024, argv[3], cancel, bytes, error), error);
@@ -79,6 +111,31 @@ int main(int argc, char** argv) {
         std::string wrongHost = base; wrongHost.replace(wrongHost.find("localhost"), 9, "127.0.0.1");
         require(!r2n64::httpGet(wrongHost + "/ok", 20, testCa, cancel, body, error) && error.find("TLS") != std::string::npos, "Wrong certificate hostname accepted"); ++checks;
         require(get("/ok", 8) && body == std::vector<uint8_t>({0, 1, 2, 3, 4, 5, 6, 255}), "HTTPS content changed");
+        // Exercise the PKG streaming path against the same trusted local TLS
+        // fixture: redirects, truncated bodies, limits, cancellation and disk errors.
+        std::atomic<uint64_t> streamBytes{0};
+        const std::string streamPath=(fixtures/"stream.pkg").string();
+        auto stream=[&](const std::string& suffix,uint64_t size,const std::string& ca) {
+            const int fd=::open(streamPath.c_str(),O_RDWR|O_CREAT|O_TRUNC,0600);
+            require(fd>=0,"stream file");
+            const bool ok=r2n64::httpDownload(base+suffix,size,ca,cancel,fd,streamBytes,error);
+            require(uint64_t(::lseek(fd,0,SEEK_END))<=size,"stream exceeded limit");
+            ::close(fd); ++checks; return ok;
+        };
+        require(stream("/ok",8,testCa)&&streamBytes==8,"streamed HTTPS failed");
+        require(stream("/redirect",8,testCa)&&streamBytes==8,"stream redirect body contaminated PKG");
+        require(!stream("/ok",7,testCa),"stream size limit ignored");
+        require(!stream("/ok",9,testCa),"stream shorter than manifest accepted");
+        require(!stream("/truncated",128,testCa),"stream truncated accepted");
+        require(!stream("/chunked",4096,testCa),"chunked overflow accepted");
+        require(!stream("/downgrade",8,testCa),"stream TLS downgrade accepted");
+        require(!stream("/ok",8,publicCa),"stream untrusted TLS accepted");
+        cancel=true; require(!stream("/ok",8,testCa),"stream pre-cancel ignored"); cancel=false;
+        {
+            const int fd=::open(streamPath.c_str(),O_RDONLY|O_TRUNC);
+            require(!r2n64::httpDownload(base+"/ok",8,testCa,cancel,fd,streamBytes,error),"stream read-only destination accepted");
+            ::close(fd);
+        }
         require(get("/empty") && body.empty(), "Valid empty response rejected");
         require(get("/redirect") && body.size() == 8, "HTTPS redirect failed or retained redirect body");
         require(!get("/downgrade") && error.find("HTTPS") != std::string::npos, "HTTP downgrade accepted");

@@ -1,4 +1,5 @@
 #include "app.h"
+#include "console_library.h"
 #include "storage.h"
 #include "ui.h"
 #include "startup.h"
@@ -11,6 +12,7 @@ App::~App() {
     cancel_ = true;
     if (worker_.joinable()) worker_.join();
     library_.stop();
+    updater_.stop();
     httpShutdown();
     emulator_.unload();
     audio_.shutdown();
@@ -34,7 +36,7 @@ void App::scan() {
     });
 }
 int App::run(bool smoke, const std::string& screenshot, bool emulationSmoke, bool accelerated, bool gpuSmoke,
-             const std::string& romSmoke, const std::string& librarySmoke, bool libraryOffline, bool n64Gpu, bool n64GraphicsHle) {
+             const std::string& romSmoke, const std::string& librarySmoke, bool libraryOffline, bool n64Gpu, bool n64GraphicsHle, bool n64Auto) {
     std::string error;
     // PacBrew SDL owns USER_SERVICE and loads Piglet using the original sandbox.
     // Complete graphics initialization and presentation before requesting GoldHEN access.
@@ -72,6 +74,7 @@ int App::run(bool smoke, const std::string& screenshot, bool emulationSmoke, boo
         emulationConfig_.profileCore = true;
         emulationConfig_.graphics = n64Gpu ? N64Graphics::Gles2 : N64Graphics::Software;
         emulationConfig_.graphicsHle = n64GraphicsHle;
+        emulationConfig_.automaticProfile = n64Auto;
         // Exercise two complete load/run/unload sessions through the real app.
         const std::string testPath = romSmoke.empty() ? diagnosticPath : romSmoke;
         Game testGame;
@@ -85,7 +88,9 @@ int App::run(bool smoke, const std::string& screenshot, bool emulationSmoke, boo
         log_.write("INFO", "Emulation smoke passed: two sessions, video and audio");
         return 0;
     }
-    std::vector<Game> allGames, games;
+    std::vector<Game> allGames;
+    ConsoleLibrary consoleLibrary;
+    auto& games = consoleLibrary.games;
     LibraryMetadata selectedMetadata;
     std::string selectedPath, loadedPath;
     Game queuedDownload;
@@ -95,17 +100,14 @@ int App::run(bool smoke, const std::string& screenshot, bool emulationSmoke, boo
     uint64_t artworkRevision = 0;
     const auto caFile = assets.empty() ? std::string{} : assets + "/certs/cacert.pem";
     View view;
+    view.updatePreferences = loadUpdatePreferences(root);
     view.menu.gpuRendering = n64Gpu;
     view.menu.graphicsHle = n64GraphicsHle;
     view.games = &games;
+    view.allGames = &allGames;
     auto filterGames = [&]() {
-        games.clear();
-        const SystemType systems[] = {SystemType::Unknown, SystemType::GameBoy,
-            SystemType::GameBoyColor, SystemType::GameBoyAdvance, SystemType::Nintendo64,
-            SystemType::NintendoEntertainmentSystem, SystemType::SuperNintendo};
-        static_assert(sizeof(systems) / sizeof(systems[0]) == Menu::SystemFilterCount, "Keep XMB filters synchronized");
-        for (const auto& game : allGames)
-            if (!view.menu.systemFilter || game.system == systems[view.menu.systemFilter]) games.push_back(game);
+        consoleLibrary.refresh(allGames, view.menu.librarySystem());
+        view.consoleCounts = consoleLibrary.counts;
         view.menu.clamp(games.size(), view.roots.size());
     };
     view.version = R2N64_VERSION;
@@ -129,9 +131,31 @@ int App::run(bool smoke, const std::string& screenshot, bool emulationSmoke, boo
     float categoryFrom = 0, itemFrom = 0;
     NavigationRepeat repeat;
     unsigned rendered = 0;
+    bool updateAutoAttempted = smoke || !librarySmoke.empty();
+    UpdateJob activeUpdateJob = UpdateJob::Check;
+    uint32_t updateStarted=0, shownUpdateSecond=0;
+    HttpStage shownUpdateStage=HttpStage::Done;
+    bool updateCancelled=false;
+    auto startUpdate = [&](UpdateJob job) {
+        view.updateConfirm=false;
+        if (!storage || caFile.empty()) {
+            view.updateStatus="Actualizaciones no disponibles: revisa almacenamiento y certificados CA.";
+            return;
+        }
+        if (updater_.start(job,root,caFile,view.updatePreferences.experimental,view.updateRelease)) {
+            activeUpdateJob=job; view.updateBusy=true;
+            view.updateInstalling=job==UpdateJob::Install;
+            updateStarted=SDL_GetTicks(); shownUpdateSecond=0; shownUpdateStage=HttpStage::Done;
+            updateCancelled=false;
+            view.updateDiagnostic.clear();
+            view.updateStatus=job==UpdateJob::Check?"Buscando versión publicada…":
+                job==UpdateJob::Download?"Descargando y verificando el PKG…":"Verificando y solicitando instalación. Espera…";
+            if(job==UpdateJob::Install) log_.write("INFO","Actualizador: usuario confirmó instalar v"+view.updateRelease.version);
+        }
+    };
     while (true) {
         const auto input = platform_.poll();
-        if (input.quit) break;
+        if (input.quit && !(updater_.busy() && activeUpdateJob==UpdateJob::Install)) break;
         const auto now = SDL_GetTicks();
         if (input.connected != view.connected) {
             view.connected = input.connected;
@@ -146,14 +170,116 @@ int App::run(bool smoke, const std::string& screenshot, bool emulationSmoke, boo
             video_.clearLibraryArtwork();
             view.scanning = false;
             view.message = pending_.warnings.empty() ? "" : "No se pudo leer: " + pending_.warnings.front();
-            log_.write("INFO", "ROM scanner completed: " + std::to_string(games.size()));
+            log_.write("INFO", "ROM scanner completed: " + std::to_string(allGames.size()));
             for (const auto& warning : pending_.warnings) log_.write("WARNING", warning);
             dirty = true;
         }
         const auto previous = view.menu;
         const auto pressed = repeat.update(input,now);
-        auto action = view.menu.handle(pressed,games.size(),view.roots.size(),view.scanning);
-        if (previous.systemFilter != view.menu.systemFilter) filterGames();
+        auto action = view.updatesOpen ? MenuAction::None : view.menu.handle(pressed,games.size(),view.roots.size(),view.scanning);
+        UpdateResult updateResult;
+        if (updater_.poll(updateResult)) {
+            view.updateBusy=false;
+            view.updateInstalling=false;
+            view.updateDiagnostic=std::string("DNS HTTPS (Cloudflare)")+
+                " · Finalizada en "+std::to_string((SDL_GetTicks()-updateStarted)/1000)+" s";
+            if (updateResult.cancelled) view.updateStatus="Actualización cancelada. Puedes volver a intentarlo.";
+            else if (!updateResult.ok) view.updateStatus=updateResult.error;
+            else if (updateResult.job==UpdateJob::Check) {
+                view.updateRelease=updateResult.release;
+                view.updateAvailable=newerUpdate(updateResult.release,R2N64_VERSION,R2N64_SFO_VERSION);
+                view.updateDownloaded=false;
+                view.updateStatus=view.updateAvailable?"Nueva versión disponible. Selecciona Descargar actualización.":
+                    "No hay una versión posterior publicada para este canal.";
+            } else if (updateResult.job==UpdateJob::Download) {
+                view.updateDownloaded=true;
+                view.updateStatus="PKG verificado. Selecciona Instalar y cerrar cuando estés listo.";
+                view.updateSelection=4;
+            } else {
+                log_.write("INFO","Actualización aceptada por BGFT: v"+updateResult.release.version+
+                    ". Cerrando; la instalación aún no está confirmada.");
+                view.updateStatus="Instalación solicitada. Revisa Descargas en PS4 y vuelve a abrir R2RETRO al terminar.";
+                renderUI(video_,view); video_.present(error);
+                break;
+            }
+            log_.write(updateResult.ok?"INFO":"WARNING","Actualizador: "+view.updateStatus);
+            dirty=true;
+        }
+        if (!updateAutoAttempted && !view.scanning) {
+            updateAutoAttempted=true;
+            if(view.updatePreferences.automatic && !updater_.busy()) { startUpdate(UpdateJob::Check); dirty=true; }
+        }
+        if (view.updatesOpen && pressed) {
+            if (pressed & Back) {
+                if(view.updateConfirm) view.updateConfirm=false;
+                else if(updater_.busy()) {
+                    if(activeUpdateJob!=UpdateJob::Install) {
+                        updater_.cancel(); updateCancelled=true;
+                        view.updateStatus="Cancelación solicitada. Esperando cierre de la conexión.";
+                        view.updatesOpen=false;
+                    }
+                } else view.updatesOpen=false;
+            } else if (!updater_.busy() || activeUpdateJob!=UpdateJob::Install) {
+                if(pressed & (Up|Down)) {
+                    if((pressed&Up) && view.updateSelection) --view.updateSelection;
+                    if((pressed&Down) && view.updateSelection<5) ++view.updateSelection;
+                    view.updateConfirm=false;
+                } else if((pressed&Confirm) && (!updater_.busy() || view.updateSelection==2)) {
+                    switch(view.updateSelection) {
+                    case 0: startUpdate(UpdateJob::Check); break;
+                    case 1: case 2: {
+                        auto preferences=view.updatePreferences;
+                        if(view.updateSelection==1) preferences.experimental=!preferences.experimental;
+                        else preferences.automatic=!preferences.automatic;
+                        if(saveUpdatePreferences(root,preferences,error)) {
+                            view.updatePreferences=preferences;
+                            if(view.updateSelection==1) {
+                                view.updateAvailable=false; view.updateDownloaded=false; view.updateRelease={};
+                                view.updateStatus="Canal guardado. Pulsa Buscar ahora.";
+                            } else view.updateStatus="Preferencia guardada.";
+                        } else view.updateStatus=error;
+                        break;
+                    }
+                    case 3: if(view.updateAvailable) startUpdate(UpdateJob::Download); break;
+                    case 4:
+                        if(view.updateDownloaded) {
+                            if(view.updateConfirm) startUpdate(UpdateJob::Install);
+                            else view.updateConfirm=true;
+                        }
+                        break;
+                    case 5: view.updatesOpen=false; break;
+                    }
+                }
+            }
+            dirty=true;
+        }
+        if(updater_.busy()) {
+            const auto seconds=(SDL_GetTicks()-updateStarted)/1000;
+            const auto stage=updater_.stage();
+            if(seconds!=shownUpdateSecond || stage!=shownUpdateStage) {
+                view.updateDiagnostic=std::string("DNS HTTPS (Cloudflare)")+
+                    " · "+httpStageName(stage)+" · "+std::to_string(seconds)+" s";
+                if(stage!=shownUpdateStage) log_.write("INFO","Actualizador: "+view.updateDiagnostic);
+                shownUpdateSecond=seconds; shownUpdateStage=stage;
+                if(activeUpdateJob==UpdateJob::Check && seconds>=45 && !updateCancelled) {
+                    updater_.cancel(); updateCancelled=true;
+                    view.updateStatus="Sin respuesta: cancelación solicitada. Círculo vuelve al menú; espera el cierre antes de reintentar.";
+                    log_.write("WARNING","Actualizador: espera excedida; "+view.updateDiagnostic);
+                } else if(activeUpdateJob==UpdateJob::Download && !updateCancelled) {
+                    view.updateStatus="Descarga: "+std::to_string(updater_.received()/(1024*1024))+" / "+
+                        std::to_string(view.updateRelease.size/(1024*1024))+" MiB. Se verificará antes de instalar.";
+                }
+                dirty=true;
+            }
+        }
+        if(action==MenuAction::Updates) {
+            view.updatesOpen=true; view.updateConfirm=false; view.updateSelection=0;
+            deferredAction=MenuAction::None; dirty=true;
+        }
+        if (previous.systemFilter != view.menu.systemFilter) {
+            filterGames();
+            view.libraryStatus.clear();
+        }
         if (pressed & (Back | Up | Down | Left | Right | PreviousSystem | NextSystem | Refresh | Diagnostics)) {
             if (deferredAction != MenuAction::None) view.message.clear();
             deferredAction = MenuAction::None;
@@ -189,6 +315,10 @@ int App::run(bool smoke, const std::string& screenshot, bool emulationSmoke, boo
             dirty = true;
         }
         if (!librarySmoke.empty() && !view.scanning && !librarySmokeStarted) {
+            if (!allGames.empty()) {
+                view.menu.openConsole(allGames.front().system);
+                filterGames();
+            }
             if (games.empty()) { log_.write("ERROR", "Library smoke ROM unavailable"); return 1; }
             librarySmokeStarted = true;
             view.menu.details = true;
@@ -226,6 +356,7 @@ int App::run(bool smoke, const std::string& screenshot, bool emulationSmoke, boo
             }
             downloadQueued = false;
             library_.cancel();
+            updater_.cancel();
             view.libraryStatus.clear();
             if (library_.busy()) view.message = "Preparando juego…";
             if (diagnostic && diagnosticPath.empty()) {
@@ -236,7 +367,7 @@ int App::run(bool smoke, const std::string& screenshot, bool emulationSmoke, boo
         }
         // Wait through the event loop, never join a running transfer on Play.
         // No network/hash/image worker overlaps an emulation or GPU session.
-        if (deferredAction == MenuAction::StartGpuDiagnostic && !library_.busy()) {
+        if (deferredAction == MenuAction::StartGpuDiagnostic && !library_.busy() && !updater_.busy()) {
             deferredAction = MenuAction::None;
             view.libraryStatus.clear(); view.message.clear();
             if (!gpuDiagnostic(error)) return startupFailure("GPU diagnostic", error.c_str());
@@ -244,7 +375,7 @@ int App::run(bool smoke, const std::string& screenshot, bool emulationSmoke, boo
             repeat = NavigationRepeat{};
             dirty = true;
             transitionStart = SDL_GetTicks() - 200;
-        } else if ((deferredAction == MenuAction::StartGame || deferredAction == MenuAction::StartDiagnostic) && !library_.busy()) {
+        } else if ((deferredAction == MenuAction::StartGame || deferredAction == MenuAction::StartDiagnostic) && !library_.busy() && !updater_.busy()) {
             deferredAction = MenuAction::None;
             view.libraryStatus.clear();
             view.message = "";
@@ -254,6 +385,7 @@ int App::run(bool smoke, const std::string& screenshot, bool emulationSmoke, boo
             emulationConfig_.profileCore = view.menu.profileCore;
             emulationConfig_.graphics = view.menu.gpuRendering ? N64Graphics::Gles2 : N64Graphics::Software;
             emulationConfig_.graphicsHle = view.menu.graphicsHle;
+            emulationConfig_.automaticProfile = view.menu.automaticProfile;
             if (!play(deferredPath, deferredTitle, error)) view.message = error;
             if (quitting_) break;
             repeat = NavigationRepeat{};

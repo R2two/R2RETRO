@@ -47,27 +47,40 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
     // including when a C++ allocation or log operation throws.
     struct SessionGuard { Emulator& emulator; ~SessionGuard() { emulator.unload(); } } guard{emulator_};
     std::string gpuNotice;
-    if (requestedSystem == SystemType::Nintendo64 && config.graphics == N64Graphics::Gles2)
+    if (requestedSystem == SystemType::Nintendo64 && (config.graphics == N64Graphics::Gles2 || config.automaticProfile))
         config.hardware = &gpu;
     if (requestedSystem != SystemType::Unknown && requestedSystem != SystemType::Nintendo64) {
         if (!loadHandheldSettings(platform_.dataPath(), requestedSystem, handheld, settingsError))
             log_.write("WARNING", "Preferencias del sistema: " + settingsError);
         config.gbPalette = handheld.gbPalette;
+        config.gbaFrameskip = handheld.gbaFrameskip;
     }
     if (!emulator_.load(path, platform_.dataPath(), log_, error, config)) {
-        if (!config.hardware) return false;
+        if (!config.hardware || emulator_.effectiveConfig().graphics != N64Graphics::Gles2) return false;
+        config = emulator_.effectiveConfig();
         gpuNotice = "GPU no disponible: " + error + " · Se usa Angrylion CPU.";
         log_.write("WARNING", gpuNotice);
         gpu.reset();
         config.graphics = N64Graphics::Software;
+        config.automaticProfile = false; // A failed auto GPU profile must not select GPU again.
         config.hardware = nullptr;
         if (!emulator_.load(path, platform_.dataPath(), log_, error, config)) return false;
     }
+    config = emulator_.effectiveConfig();
+    if (config.graphics == N64Graphics::Gles2)
+        log_.write("INFO", "GPU driver: " + gpu.driverDescription());
     const bool extended = emulator_.system() != SystemType::Nintendo64;
     const bool handheldSystem = emulator_.system() == SystemType::GameBoy ||
         emulator_.system() == SystemType::GameBoyColor || emulator_.system() == SystemType::GameBoyAdvance;
     const bool snes = emulator_.system() == SystemType::SuperNintendo;
     const bool overlaySystem = handheldSystem || snes;
+    std::string shaderError;
+    if (!video_.setDisplayShader(extended ? handheld.shader : 0, shaderError))
+        log_.write("WARNING", shaderError);
+    struct ShaderGuard {
+        Video& video;
+        ~ShaderGuard() { std::string ignored; video.setDisplayShader(0, ignored); }
+    } shaderGuard{video_};
     if (extended) log_.write("INFO", "Preferencias " + std::string(systemId(emulator_.system())) +
         ": avance=" + std::to_string(handheld.fastForward) + "x; espacio=" + std::to_string(handheld.stateSlot + 1) +
         "; entero=" + std::to_string(handheld.integerScaling) + "; suavizado=" + std::to_string(handheld.linearFilter) +
@@ -98,7 +111,7 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
     bool paused = false, menuWasHeld = false, acceptingInput = false, ok = true;
     bool captureRequested = false;
     unsigned pauseSelection = 0, frames = 0;
-    enum class PauseAction { Continue, Slot, SaveState, LoadState, Reset, Speed, Scale, Filter, Overlay, Stats, Palette, Capture, Close };
+    enum class PauseAction { Continue, Slot, SaveState, LoadState, Battery, Reset, Speed, Scale, Filter, Shader, Frameskip, Overlay, Stats, Palette, Capture, Close };
     std::vector<std::pair<PauseAction, std::string>> pauseItems{{PauseAction::Continue, "Continuar"}};
     const auto refreshPauseItems = [&]() {
         pauseItems.resize(1);
@@ -109,6 +122,14 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
         }
         pauseItems.emplace_back(PauseAction::Reset, "Reiniciar juego");
         if (extended) {
+            pauseItems.emplace_back(PauseAction::Battery, "Escribir partida SRAM/RTC");
+            const char* shaderName = handheld.shader == 1 ? "LCD suave" : handheld.shader == 2 ? "CRT suave" : "desactivado";
+            pauseItems.emplace_back(PauseAction::Shader, std::string("Shader: ") + shaderName +
+                (handheld.shader && !video_.displayShaderMode() ? " (no disponible)" : ""));
+            if (emulator_.system() == SystemType::GameBoyAdvance)
+                pauseItems.emplace_back(PauseAction::Frameskip, handheld.gbaFrameskip ?
+                    "Salto GBA: dibujar 1 de cada " + std::to_string(handheld.gbaFrameskip + 1) + " cuadros" :
+                    "Salto GBA: desactivado");
             pauseItems.emplace_back(PauseAction::Speed, "Avance rápido: " + std::to_string(handheld.fastForward) + "x · mantener R2");
             if (overlaySystem)
                 pauseItems.emplace_back(PauseAction::Overlay, !handheld.overlay ? "Marco: desactivado" :
@@ -128,6 +149,7 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
     std::string pauseNotice = settingsError.empty() ? "" : "Preferencias no válidas: se usan valores iniciales.";
     if (!gpuNotice.empty()) pauseNotice = gpuNotice;
     if (!overlayError.empty()) pauseNotice = overlayError;
+    if (!shaderError.empty()) pauseNotice = shaderError;
     PlaybackSpeed speed;
     unsigned acceleratedSteps = 0, speedTransitions = 0;
     bool audioResumedAfterFastForward = false;
@@ -151,6 +173,14 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
             stats.averageCoreMs(), extended ? "frame" : "VI", stats.averagePresentMs(),
             extended ? "frame" : "VI", stats.elapsedMs / 1000.0);
         log_.write("INFO", message);
+        if (!extended && config.profileCore) {
+            std::snprintf(message, sizeof(message),
+                "N64 pacing: over budget %llu/%llu VI; peak core %.3f ms, peak present %.3f ms; profile=%s",
+                static_cast<unsigned long long>(stats.overBudgetSteps),
+                static_cast<unsigned long long>(stats.measuredSingleSteps),
+                stats.peakCoreMs, stats.peakPresentMs, emulator_.profileName());
+            log_.write("INFO", message);
+        }
         log_.write("INFO", std::string("CPU: ") + emulator_.cpuName() +
             "; recognized audio tasks accelerated: " + std::to_string(emulator_.audioHleTasks()));
         if (emulationConfig_.profileCore && emulator_.system() == SystemType::Nintendo64) {
@@ -191,7 +221,10 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
             if (!connected) paused = true;
             // mGBA computes serialize_size by creating a snapshot; query this
             // only when opening the menu, never in the active frame loop.
-            if (paused) refreshPauseItems();
+            if (paused) {
+                refreshPauseItems();
+                if (!video_.displayShaderError().empty()) pauseNotice = video_.displayShaderError();
+            }
             acceptingInput = false;
             audio_.pause(paused); audio_.clear(); deadline = clockMs();
         }
@@ -205,6 +238,7 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
                     paused = false; acceptingInput = false; audio_.pause(false); deadline = clockMs();
                 } else if (action == PauseAction::Slot || action == PauseAction::Speed ||
                            action == PauseAction::Scale || action == PauseAction::Filter ||
+                           action == PauseAction::Shader || action == PauseAction::Frameskip ||
                            action == PauseAction::Overlay || action == PauseAction::Stats || action == PauseAction::Palette) {
                     auto next = handheld;
                     if (action == PauseAction::Slot) next.stateSlot = (next.stateSlot + 1) % 5;
@@ -214,9 +248,18 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
                     if (action == PauseAction::Overlay) next.overlay = !next.overlay;
                     if (action == PauseAction::Stats) next.showStats = !next.showStats;
                     if (action == PauseAction::Palette) next.gbPalette = (next.gbPalette + 1) % 4;
+                    if (action == PauseAction::Shader) next.shader = (next.shader + 1) % 3;
+                    if (action == PauseAction::Frameskip) next.gbaFrameskip = (next.gbaFrameskip + 1) % 3;
                     std::string settingError;
-                    if (action != PauseAction::Palette || emulator_.setGameBoyPalette(next.gbPalette, settingError)) {
+                    const bool applied = (action != PauseAction::Palette || emulator_.setGameBoyPalette(next.gbPalette, settingError)) &&
+                        (action != PauseAction::Frameskip || emulator_.setGbaFrameskip(next.gbaFrameskip, settingError));
+                    if (applied) {
                         handheld = next;
+                        bool shaderAvailable = true;
+                        if (action == PauseAction::Shader) {
+                            shaderAvailable = video_.setDisplayShader(handheld.shader, shaderError);
+                            if (!shaderAvailable) log_.write("WARNING", shaderError);
+                        }
                         bool overlayAvailable = true;
                         if (action == PauseAction::Overlay) {
                             overlayAvailable = video_.setHandheldOverlay(emulator_.system(), handheld.overlay, overlayError);
@@ -232,8 +275,16 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
                         if (!persisted) log_.write("WARNING", pauseNotice);
                         if (!overlayAvailable) pauseNotice = overlayError +
                             (persisted ? "" : " · No se pudo guardar la preferencia.");
+                        if (!shaderAvailable) pauseNotice = shaderError;
+                        if (persisted && action == PauseAction::Frameskip) pauseNotice =
+                            "Aplicado al continuar. Reduce dibujo, no la velocidad objetivo; puede verse menos fluido.";
                         refreshPauseItems();
                     } else pauseNotice = settingError;
+                } else if (action == PauseAction::Battery) {
+                    std::string saveError;
+                    const bool saved = emulator_.saveBattery(saveError);
+                    pauseNotice = saved ? "SRAM/RTC escrita. Para registrar progreso usa Guardar dentro del juego." : saveError;
+                    log_.write(saved ? "INFO" : "WARNING", pauseNotice);
                 } else if (action == PauseAction::Capture) {
                     // Render the paused game and frame first; never capture the
                     // pause menu, advance emulation, or trigger a state load.
@@ -378,12 +429,13 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
                 (config.graphics == N64Graphics::Gles2 ? (config.graphicsHle ? "GLideN64 GPU + HLE gráfico" : "GLideN64 GPU + RSP LLE") :
                 "Angrylion CPU · " + std::to_string(config.workers) + (config.workers == 1 ? " hilo" : " hilos")),
                 160, 240, muted, 20);
-              video_.text(emulationConfig_.audioHle ?
+              video_.text(config.audioHle ?
                 "Audio HLE: " + std::to_string(emulator_.audioHleTasks()) + " tareas aceleradas" :
                 "Audio: RSP original (LLE) · Activa HLE en Ajustes antes de abrir el juego", 160, 274, muted, 20);
               if (config.graphics == N64Graphics::Gles2 && config.graphicsHle)
                 video_.text("Gráficos HLE: " + std::to_string(emulator_.graphicsHleTasks()) +
                     " · respaldo LLE: " + std::to_string(emulator_.graphicsLleTasks()), 160, 301, muted, 20);
+              video_.text(std::string("Perfil: ") + emulator_.profileName(), 1080, 197, accent, 20, 690);
             } else video_.text("Preferencias por sistema · X cambia la opción seleccionada", 160, 247, muted, 20);
             const unsigned firstItem = extended && pauseSelection >= 8 ? pauseSelection - 7 : 0;
             const unsigned lastItem = std::min<unsigned>(unsigned(pauseItems.size()), firstItem + 8);
@@ -395,7 +447,8 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
                 video_.text(performanceText, 1130, 335, accent, 24, 630);
                 video_.text(performanceDetail, 1130, 382, muted, 20, 630);
                 video_.text("100% = velocidad normal", 1130, 434, muted, 20, 630);
-                video_.text("FPS de salida del núcleo", 1130, 470, muted, 20, 630);
+                video_.text(emulator_.system() == SystemType::GameBoyAdvance && handheld.gbaFrameskip ?
+                    "FPS emulados; algunos cuadros se repiten" : "FPS de salida del núcleo", 1130, 470, muted, 20, 630);
                 video_.text(videoDetail, 1130, 501, muted, 20, 630);
                 video_.text("Mantén R2 / Espacio: " + std::to_string(handheld.fastForward) + "x", 1130, 536, accent, 24, 630);
                 video_.text("El audio se silencia durante el avance.", 1130, 578, muted, 20, 630);

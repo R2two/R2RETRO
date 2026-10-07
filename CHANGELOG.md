@@ -4,7 +4,9 @@ Resumen editorial de hitos existentes. [STATUS](docs/STATUS.md) conserva pruebas
 
 | Versión | Hito |
 |---|---|
-| **0.5.1** | HLE gráfico conservador para GLideN64, respaldo CXD4 y perfil SDL/núcleo. [Notas](docs/releases/v0.5.1.md). |
+| **0.5.5** | Shaders LCD/CRT, SRAM/RTC en pausa, frameskip GBA, Cloudflare fijo, logos revisados y actualizador. [Notas](docs/releases/v0.5.5.md). |
+| 0.5.2–0.5.4 | Compatibilidad N64, biblioteca por consola, perfiles automáticos, arte y actualizador con diagnóstico de red; compilaciones locales previas. |
+| 0.5.1 | HLE gráfico conservador para GLideN64, respaldo CXD4 y perfil SDL/núcleo. [Notas](docs/releases/v0.5.1.md). |
 | 0.5.0 | GLideN64 GLES2 opcional, GPU compartida con SDL y comprobaciones de marcos. |
 | 0.4.5 | Precarga de marcos, vídeo opaco y diagnóstico/regresión NES MMC3. |
 | 0.4.4 | Resolución de recursos tras transición de sandbox y diagnóstico de CA. |

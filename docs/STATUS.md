@@ -1,4 +1,125 @@
-# Estado de desarrollo — 5 de octubre de 2026
+# Estado de desarrollo — 7 de octubre de 2026
+
+## v0.5.5 — empaquetado autorizado
+
+El usuario autorizó compilar, empaquetar y publicar. Compilaciones desktop y PS4
+terminadas; 52 grupos CTest aprobados (51 en pasada completa y actualizador
+repetido tras adaptar su fixture para que represente una versión posterior).
+PKG extraído y validado, SHA-256 `1f6fef9555d84a13baba7f91c48b7bb09d6c5782b9cbb80ac174fadea6bbf6c9`,
+65994752 bytes, APP_VER00.55. Cliente verifica el manifiesto y el PKG real.
+Sin prueba física ni autoactualización física confirmada; no mejora N64 medida.
+[Notas completas](releases/v0.5.5.md). Las secciones «sin compilar» inferiores
+conservan el estado histórico anterior a esta autorización.
+
+## Cambios pendientes de autorización para compilar
+
+Fuentes ampliadas con shaders LCD/CRT opcionales para GB/GBC/GBA/NES/SNES,
+guardado SRAM/RTC desde pausa y salto nativo mGBA 0/1/2. Preferencias antiguas
+mantienen ambos efectos desactivados. Pruebas fuente ampliadas, sin ejecutar.
+Cloudflare ya cubre RDB y carátulas en el transporte compartido. No se habilita
+frameskip N64: omitir presentación no elimina su coste interno. Revisiones
+upstream intactas, sin promesa de rendimiento nuevo ni PKG.
+[Alcance y validación pendiente](CORE-DISPLAY-IMPROVEMENTS.md).
+
+El usuario confirma Cloudflare operativo en PS4. Código ajustado a Cloudflare
+DoH fijo en actualizador y catálogo, sin selector ni preferencia desactivable;
+DNS global de consola intacto. Migración de preferencias y fuentes de pruebas
+adaptadas, sin ejecutarlas. Logos: seis texturas pequeñas con subida explícita
+pendientes de prueba; nueva inspección del PNG confirma color, transparencia y
+recortes válidos para los seis sistemas. No se confirma aún la solución física
+de los cuadros blancos. **No se compiló ni se generó PKG** para estos cambios.
+
+## v0.5.4 — diagnóstico de red y DNS HTTPS opcional
+
+Responde al bloqueo de búsqueda reportado por el usuario en v0.5.3 física.
+Modo DNS Sistema/HTTPS (Cloudflare) solo del actualizador, TLS intacto,
+bootstrap del resolver sin tocar DNS PS4. Etapas/segundos, cancelación mediante
+curl multi y watchdog cooperativo a 45 s. Círculo vuelve al menú; preferencias
+DNS y búsqueda automática editables durante consultas. No se afirma causa
+física corregida: el bloqueo original necesita nueva prueba en consola.
+
+52/52 CTest, diez casos DoH y validadores/adaptador con ASan/UBSan aprobados.
+Consulta GitHub real por DoH finaliza en 404: canal aún no publicado.
+PKG local compilado/extraído/validado `dist/R2RETRO-v0.5.4-updater.pkg`,
+65.994.752 bytes, SFO00.54, SHA256
+`0b0ea347ff591c5bfddaf78651f5f90b1087e3cafa8d2daebe39921a366f356b`.
+v0.5.3 intacta. Instalar por USB para probar la corrección; sin publicación
+remota ni autoactualización física confirmada. [Detalles](UPDATER-NETWORK-V054.md).
+
+## v0.5.3 — actualizador experimental, PKG local
+
+Implementado Ajustes → Actualizaciones: canales estable/experimental, búsqueda
+opcional al iniciar, descarga HTTPS a disco, SHA-256/identidad/SFO, confirmación
+e instalación local mediante BGFT seguida de salida. Sin desinstalar contenido.
+51/51 CTest, ASan/UBSan nativo/backend PS4 y adaptador BGFT simulado aprobados.
+Descarga real del PKG público v0.5.1 desde GitHub con el transporte nuevo y
+verificación completa correcta en Linux. No equivale a instalación PS4.
+
+PKG local `dist/R2RETRO-v0.5.3-updater.pkg`, 65.994.752 bytes, SFO00.53,
+SHA256 `a896d970d3226a2b39f680b8bbe725b9bb6f601b4de2f7e64a94426665e51be6`.
+Compilado/extraído/validado; v0.5.2 preservada. Incluye también los cambios de
+biblioteca, perfiles y arte descritos abajo, que antes estaban sin empaquetar.
+
+El manifiesto queda preparado en `dist/update-v0.5.3-experimental.txt`.
+**Sin publicación remota, sin instalación física ni autoactualización confirmada.**
+El usuario informa firmware13.52, GoldHEN posiblemente2.4b18.6 y elige USB para
+la instalación inicial. Después hará falta una versión posterior publicada
+para probar el reemplazo desde el menú. [Implementación y prueba](UPDATER-V053.md).
+
+## Historial de cambios posteriores a v0.5.2 — incluidos ahora en v0.5.3
+
+Logos transparentes N64/NES/SNES/GB/GBC/GBA asociados a sus consolas, en lista,
+selección ampliada y cabecera. Atlas cacheado al inicio, sin lecturas por cuadro,
+iconos vectoriales como respaldo. Tres pruebas de interfaz aprobadas y ejecutable
+PS4 compilado; sin nuevo PKG ni prueba física. [Detalle](CONSOLE-LOGOS.md).
+
+Fondo definitivo elegido por el usuario: `assets/background-room.jpg`, habitación
+Nintendo copiada íntegra del nuevo adjunto. Sustituye el PNG generado al iniciar;
+contraste aplicado en renderer y JPG anterior preservado como respaldo.
+
+Inicio XMB renovado: nuevo fondo generado `assets/background-home.png`, original
+JPG preservado, selección cian de alto contraste e iconos de portátiles/GBA.
+7/7 regresiones de vídeo/XMB/GPU y compilación del ejecutable PS4 aprobadas.
+Sin nuevo PKG ni prueba física. [Vista y prompt](HOME-ART-DIRECTION.md).
+
+Perfiles N64 automáticos para las revisiones exactas Mario USA y Zelda USA 1.2;
+otros juegos mantienen ajustes base. Modo manual y etiqueta en pausa, respaldo
+CPU ante fallo inicial GPU. Reserva PCM, restauración GL diferencial y diagnóstico
+de driver/picos de tiempo. 50/50 CTest, 11 regresiones finales, 9.600 VI Mario/Zelda
+en GLES2 con capturas iguales a v0.5.2; ejecutable PS4 compilado. Sin ganancia
+PS4 medida, nuevo PKG, Vulkan ni caché shader en disco. GLES3.2 falla en Mario
+también con restauración completa. [Detalles y límites](N64-AUTOMATIC-PROFILES.md).
+
+Biblioteca organizada por carpetas de consola, sin vista «Todos» inicial:
+N64, NES, SNES, GB, GBC y GBA. Filtro exacto por sistema, contadores, regreso a
+carpetas y selección independiente por consola. 49/49 CTest aprobados en
+Linux/Mesa (124,83 s); compilación del ejecutable PS4 correcta. Sin prueba física.
+[Comportamiento y pruebas](CONSOLE-LIBRARY.md).
+
+El usuario aplaza la integración GameCube/Wii y devuelve la prioridad a N64.
+DolphinPS4 queda como referencia técnica, no como nuevo core en desarrollo activo.
+DolphinPS4 auditado en `6b0c6bdfde673c214245250181b1584b2c914787`;
+GameCube/Wii **todavía no integrados**. Su RADV/CRT/libc++ requieren un proceso
+separado y un adaptador de lanzamiento/retorno. Bootstrap detenido por clang 21
+ausente; inventario de otras dependencias con `scripts/check-dolphinps4-build.py`.
+No se sustituye OpenOrbis ni se incorporan binarios/ROMs externos al paquete.
+[Auditoría y trabajo pendiente](DOLPHIN-PS4-INTEGRATION.md).
+
+## v0.5.2 — compatibilidad N64 GPU
+
+Parche 0009: las tareas gráficas suspendidas pasan a CXD4 incluso con PC de
+arranque; GLideN64 recorta nombres internos vacíos sin leer fuera del buffer.
+Ambos fallos reproducidos antes del cambio y corregidos con pruebas ASan/UBSan.
+No se amplían perfiles HLE ni se desactivan efectos de framebuffer.
+
+49/49 CTest y ocho sesiones Mario/Zelda (9.600 VI) aprobados en Linux/Mesa,
+capturas finales idénticas a v0.5.1 por modo, ROMs intactas. PKG compilado,
+extraído y validado: `dist/R2RETRO-v0.5.2-compatibility.pkg`, 64.225.280 bytes,
+SFO `00.52`, SHA-256
+`7cbd17dbfc17081df8077fc6a84cc3e7a09c7de95bf39ebddea4b3f216344691`.
+Avisos/parches se actualizan también en empaquetado incremental.
+v0.5.1 preservada; sin publicación remota, prueba física ni ganancia de velocidad
+certificada. [Evidencia y límites](N64-COMPATIBILITY-V052.md).
 
 ## v0.5.1 — GPU y HLE gráfico con respaldo CXD4
 

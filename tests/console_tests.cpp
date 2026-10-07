@@ -187,6 +187,12 @@ int main(int argc, char** argv) {
             inputs(emulator, system, error);
             const auto marker = static_cast<unsigned char>(0xa0 + consoleIndex++);
             ram(system).data[256] = marker;
+            const auto beforeFlush = status(system);
+            require(emulator.saveBattery(error), "Explicit console SRAM save: " + error);
+            require(status(system) == beforeFlush, "Explicit console save advanced emulation");
+            const auto flushed = read(data / "saves" / systemId(system) / (game.id + ".srm"));
+            require(flushed.size() > 256 && flushed[256] == marker, "Console SRAM not written before unload");
+            require(!emulator.setGbaFrameskip(1, error), "GBA frameskip applied to NES/SNES");
             require(emulator.supportsSaveStates(), "Console states unsupported");
             require(!emulator.loadState(error, 4), "Missing state slot accepted");
             std::array<std::array<unsigned char, 16>, 2> slotStatus;

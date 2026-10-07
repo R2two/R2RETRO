@@ -5,6 +5,7 @@
 #include <array>
 #include <cstring>
 #include <cstdio>
+#include <cmath>
 
 namespace r2n64 {
 namespace {
@@ -41,6 +42,9 @@ constexpr GLenum VertexArrayBinding = 0x85b5, PackedDepthStencil = 0x88f0;
     X(void, FramebufferRenderbuffer, (GLenum, GLenum, GLenum, GLuint)) \
     X(void, DeleteRenderbuffers, (GLsizei, const GLuint*)) \
     X(void, UseProgram, (GLuint)) \
+    X(GLint, GetUniformLocation, (GLuint, const GLchar*)) \
+    X(void, Uniform2f, (GLint, GLfloat, GLfloat)) \
+    X(void, Uniform1f, (GLint, GLfloat)) \
     X(GLuint, CreateShader, (GLenum)) \
     X(void, ShaderSource, (GLuint, GLsizei, const GLchar* const*, const GLint*)) \
     X(void, CompileShader, (GLuint)) \
@@ -92,6 +96,7 @@ struct GL {
 #undef DECLARE_GL
     void (GL_APIENTRY *BindVertexArray)(GLuint) = nullptr;
     bool packedDepthStencil = false;
+    std::string driver;
     unsigned attributes = 0;
     bool load(std::string& error) {
 #define LOAD_GL(result, name, args) \
@@ -101,6 +106,9 @@ struct GL {
 #undef LOAD_GL
         const auto* extensions = reinterpret_cast<const char*>(GetString(GL_EXTENSIONS));
         const auto* version = reinterpret_cast<const char*>(GetString(GL_VERSION));
+        const auto* renderer = reinterpret_cast<const char*>(GetString(GL_RENDERER));
+        driver = std::string(version ? version : "unknown GLES") + " / " +
+            (renderer ? renderer : "unknown renderer");
         auto extension = [extensions](const char* name) {
             if (!extensions) return false;
             const size_t length = std::strlen(name);
@@ -109,6 +117,15 @@ struct GL {
             return false;
         };
         const bool es3 = version && std::strstr(version, "OpenGL ES 3.");
+        bool binary = false;
+        if (es3 || extension("GL_OES_get_program_binary")) {
+            GLint formats = 0;
+            GetIntegerv(0x87FE /* GL_NUM_PROGRAM_BINARY_FORMATS */, &formats);
+            const auto queryError = GetError(); // This optional query must not disable otherwise working GLES.
+            binary = queryError == GL_NO_ERROR && formats > 0 && SDL_GL_GetProcAddress(es3 ? "glProgramBinary" : "glProgramBinaryOES") &&
+                SDL_GL_GetProcAddress(es3 ? "glGetProgramBinary" : "glGetProgramBinaryOES");
+        }
+        driver += binary ? "; program binary advertised (disk cache disabled)" : "; program binary unavailable";
         if (es3 || extension("GL_OES_vertex_array_object")) {
             BindVertexArray = reinterpret_cast<decltype(BindVertexArray)>(
                 SDL_GL_GetProcAddress(es3 ? "glBindVertexArray" : "glBindVertexArrayOES"));
@@ -207,9 +224,13 @@ struct State {
             gl.GetVertexAttribfv(i,GL_CURRENT_VERTEX_ATTRIB,a.current);
         }
     }
-    void restore(GL& gl) const {
-        gl.BindFramebuffer(GL_FRAMEBUFFER,framebuffer); gl.BindRenderbuffer(GL_RENDERBUFFER,renderbuffer);
-        gl.UseProgram(program);
+    void restore(GL& gl, const State* current = nullptr) const {
+        // Both states were captured in this context, immediately around the
+        // core call. Skip only writes whose values are already known equal;
+        // error/setup paths without a valid current snapshot restore everything.
+        if (!current || current->framebuffer != framebuffer) gl.BindFramebuffer(GL_FRAMEBUFFER,framebuffer);
+        if (!current || current->renderbuffer != renderbuffer) gl.BindRenderbuffer(GL_RENDERBUFFER,renderbuffer);
+        if (!current || current->program != program) gl.UseProgram(program);
         if (gl.BindVertexArray) gl.BindVertexArray(vertexArray);
         for (unsigned i = 0; i < gl.attributes; ++i) {
             const auto& a = attribute[i];
@@ -220,10 +241,12 @@ struct State {
         }
         gl.BindBuffer(GL_ARRAY_BUFFER,arrayBuffer); gl.BindBuffer(GL_ELEMENT_ARRAY_BUFFER,elementBuffer);
         for (unsigned i = 0; i < SdlTextureUnits; ++i) {
-            gl.ActiveTexture(GL_TEXTURE0+i); gl.BindTexture(GL_TEXTURE_2D,textures[i]);
+            gl.ActiveTexture(GL_TEXTURE0+i);
+            if (!current || current->textures[i] != textures[i]) gl.BindTexture(GL_TEXTURE_2D,textures[i]);
         }
         gl.ActiveTexture(activeTexture);
-        gl.Viewport(viewport[0],viewport[1],viewport[2],viewport[3]); gl.Scissor(scissor[0],scissor[1],scissor[2],scissor[3]);
+        if (!current || !std::equal(viewport,viewport+4,current->viewport)) gl.Viewport(viewport[0],viewport[1],viewport[2],viewport[3]);
+        if (!current || !std::equal(scissor,scissor+4,current->scissor)) gl.Scissor(scissor[0],scissor[1],scissor[2],scissor[3]);
         gl.BlendFuncSeparate(blend[0],blend[1],blend[2],blend[3]); gl.BlendEquationSeparate(blend[4],blend[5]);
         gl.BlendColor(blendColor[0],blendColor[1],blendColor[2],blendColor[3]);
         gl.ColorMask(colorMask[0],colorMask[1],colorMask[2],colorMask[3]);
@@ -238,8 +261,10 @@ struct State {
         gl.CullFace(cullFace); gl.FrontFace(frontFace); gl.LineWidth(lineWidth);
         gl.PolygonOffset(polygonFactor,polygonUnits); gl.SampleCoverage(sampleCoverage,sampleInvert);
         gl.PixelStorei(GL_PACK_ALIGNMENT,pack); gl.PixelStorei(GL_UNPACK_ALIGNMENT,unpack);
-        for (unsigned i = 0; i < sizeof(capabilities)/sizeof(*capabilities); ++i)
+        for (unsigned i = 0; i < sizeof(capabilities)/sizeof(*capabilities); ++i) {
+            if (current && current->enabled[i] == enabled[i]) continue;
             if (enabled[i]) gl.Enable(capabilities[i]); else gl.Disable(capabilities[i]);
+        }
     }
 };
 
@@ -436,7 +461,7 @@ bool GpuSession::begin(std::string& error) {
     // GLSM restores selected values, not a whole context. In particular SDL's
     // enabled blend/attributes and VBO bindings must not leak into the core.
     if (!s.coreStateValid) s.core=State::neutral(s.width,s.height,s.fbo);
-    s.core.restore(s.gl);
+    s.core.restore(s.gl,&s.frontend);
     s.gl.BindFramebuffer(GL_FRAMEBUFFER,s.fbo);
     if (!s.gl.okay(error,"activar framebuffer")) { s.frontend.restore(s.gl); s.active=false; return false; }
     return true;
@@ -453,7 +478,7 @@ bool GpuSession::end(std::string& error) {
         if (!error.empty()) error += "; ";
         error += captureError; coreOkay=false;
     }
-    s.frontend.restore(s.gl); s.active=false;
+    s.frontend.restore(s.gl,s.coreStateValid ? &s.core : nullptr); s.active=false;
     std::string restoreError;
     if (!s.gl.okay(restoreError,"restaurar estado SDL")) {
         if (!error.empty()) error += "; ";
@@ -481,5 +506,139 @@ void GpuSession::reset() {
     if (s.active) end(error);
     SDL_RenderFlush(s.renderer);
     s.release();
+}
+std::string GpuSession::driverDescription() const { return impl_->gl.driver; }
+
+struct DisplayShader::Impl {
+    SDL_Window* window;
+    SDL_Renderer* renderer;
+    SDL_GLContext context = nullptr;
+    SDL_threadID thread = SDL_ThreadID();
+    GL gl;
+    GLuint program = 0, buffer = 0;
+    GLint sizeUniform = -1, modeUniform = -1;
+    unsigned selected = 0;
+    bool current() const {
+        return SDL_ThreadID() == thread && context && SDL_GL_GetCurrentContext() == context &&
+               SDL_GL_GetCurrentWindow() == window;
+    }
+    void release() {
+        // Never call GL after a lost/replaced context or renderer destruction.
+        if (current()) {
+            if (buffer) gl.DeleteBuffers(1, &buffer);
+            if (program) gl.DeleteProgram(program);
+        }
+        buffer = program = 0;
+        selected = 0;
+    }
+};
+DisplayShader::DisplayShader(SDL_Window* window, SDL_Renderer* renderer)
+    : impl_(new Impl{window, renderer}) {}
+DisplayShader::~DisplayShader() { impl_->release(); }
+unsigned DisplayShader::mode() const { return impl_->selected; }
+bool DisplayShader::select(unsigned mode, std::string& error) {
+    error.clear(); auto& s = *impl_;
+    if (mode > 2) { error = "Shader fuera de rango."; return false; }
+    if (!mode) { s.selected = 0; return true; }
+    SDL_RendererInfo info{};
+    if (SDL_ThreadID() != s.thread || !s.renderer || SDL_GetRendererInfo(s.renderer, &info) < 0 ||
+        !info.name || std::strcmp(info.name, "opengles2")) {
+        error = "Shader no disponible: requiere el renderer GLES2."; return false;
+    }
+    if (SDL_RenderFlush(s.renderer) < 0) { error = SDL_GetError(); return false; }
+    if (!s.context) s.context = SDL_GL_GetCurrentContext();
+    if (!s.current()) { error = "Shader: contexto GLES2 no disponible."; return false; }
+    if (s.program) { s.selected = mode; return true; }
+    if (!s.gl.load(error) || !s.gl.okay(error, "iniciar shader de pantalla")) return false;
+    StateGuard guard(s.gl);
+    GLuint vertex = s.gl.CreateShader(GL_VERTEX_SHADER), fragment = s.gl.CreateShader(GL_FRAGMENT_SHADER);
+    // A translucent black mask modulates SDL's already-correct RGB output.
+    // No sampling of SDL's private BGRA/RGBA storage or extra framebuffer copy.
+    const char* vs = "attribute vec2 position; varying mediump vec2 uv; void main(){"
+        "uv=(position+1.0)*0.5; gl_Position=vec4(position,0.0,1.0);}";
+    const char* fs = "precision mediump float; varying mediump vec2 uv; uniform vec2 sourceSize; uniform float effect;"
+        "void main(){vec2 cell=fract(uv*sourceSize); float a;"
+        "if(effect<1.5){a=0.16*(1.0-step(0.28, min(cell.x,cell.y)));}"
+        "else{a=0.20*(0.5+0.5*cos((cell.y-0.25)*6.2831853));}"
+        "gl_FragColor=vec4(0.0,0.0,0.0,a);}";
+    bool ok = compile(s.gl, vertex, vs, error) && compile(s.gl, fragment, fs, error);
+    if (ok) {
+        s.program = s.gl.CreateProgram();
+        s.gl.AttachShader(s.program, vertex); s.gl.AttachShader(s.program, fragment);
+        s.gl.BindAttribLocation(s.program, 0, "position"); s.gl.LinkProgram(s.program);
+        GLint linked = 0; s.gl.GetProgramiv(s.program, GL_LINK_STATUS, &linked);
+        ok = linked != 0;
+        if (!ok) {
+            std::array<char, 513> message{};
+            s.gl.GetProgramInfoLog(s.program, 512, nullptr, message.data());
+            error = "Shader: no se pudo enlazar el programa: " + std::string(message.data());
+        }
+    }
+    if (vertex) s.gl.DeleteShader(vertex);
+    if (fragment) s.gl.DeleteShader(fragment);
+    if (ok) {
+        s.sizeUniform = s.gl.GetUniformLocation(s.program, "sourceSize");
+        s.modeUniform = s.gl.GetUniformLocation(s.program, "effect");
+        s.gl.GenBuffers(1, &s.buffer);
+        s.gl.BindBuffer(GL_ARRAY_BUFFER, s.buffer);
+        const GLfloat triangle[] = {-1,-1, 3,-1, -1,3};
+        s.gl.BufferData(GL_ARRAY_BUFFER, sizeof(triangle), triangle, GL_STATIC_DRAW);
+        ok = s.buffer && s.sizeUniform >= 0 && s.modeUniform >= 0 && s.gl.okay(error, "preparar shader");
+        if (!ok && error.empty()) error = "Shader: recursos GLES2 incompletos.";
+    }
+    guard.restore();
+    std::string restored;
+    if (!s.gl.okay(restored, "restaurar SDL tras preparar shader")) { error = restored; ok = false; }
+    if (!ok) { s.release(); return false; }
+    s.selected = mode;
+    return true;
+}
+bool DisplayShader::draw(unsigned width, unsigned height, const SDL_Rect& destination, std::string& error) {
+    error.clear(); auto& s = *impl_;
+    if (!s.selected) return true;
+    if (!width || !height || width > 2048 || height > 2048 || destination.w <= 0 || destination.h <= 0) {
+        error = "Shader: dimensiones no validas."; return false;
+    }
+    if (SDL_RenderFlush(s.renderer) < 0) { error = SDL_GetError(); return false; }
+    if (!s.current()) { error = "Shader: se perdio el contexto GLES2."; return false; }
+    if (SDL_GetRenderTarget(s.renderer)) { error = "Shader: destino SDL inesperado."; return false; }
+    int outputWidth = 0, outputHeight = 0;
+    if (SDL_GetRendererOutputSize(s.renderer, &outputWidth, &outputHeight) < 0) { error = SDL_GetError(); return false; }
+    if (!s.gl.okay(error, "estado SDL antes del shader")) return false;
+    StateGuard guard(s.gl);
+    // SDL's current viewport is authoritative for logical-size letterboxing.
+    // gameFrame resets the viewport to the complete 1920x1080 logical canvas.
+    const auto& vp = guard.state.viewport;
+    int logicalWidth = 0, logicalHeight = 0;
+    SDL_RenderGetLogicalSize(s.renderer, &logicalWidth, &logicalHeight);
+    if (logicalWidth <= 0 || logicalHeight <= 0 || outputWidth <= 0 || outputHeight <= 0) {
+        error = "Shader: viewport SDL no valido."; return false;
+    }
+    const float sx = float(vp[2]) / logicalWidth, sy = float(vp[3]) / logicalHeight;
+    const int left = vp[0] + int(std::lround(destination.x * sx));
+    const int right = vp[0] + int(std::lround((destination.x + destination.w) * sx));
+    const int bottom = vp[1] + int(std::lround((logicalHeight - destination.y - destination.h) * sy));
+    const int top = vp[1] + int(std::lround((logicalHeight - destination.y) * sy));
+    // Below 2 output pixels per source pixel, masks alias; keep clean image.
+    if (right - left < int(width * 2) || top - bottom < int(height * 2)) return true;
+    for (auto cap : capabilities) s.gl.Disable(cap);
+    s.gl.Enable(GL_BLEND);
+    s.gl.BlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+    s.gl.BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
+    s.gl.ColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    s.gl.Viewport(left, bottom, right - left, top - bottom);
+    s.gl.UseProgram(s.program);
+    s.gl.Uniform2f(s.sizeUniform, float(width), float(height));
+    s.gl.Uniform1f(s.modeUniform, float(s.selected));
+    s.gl.BindBuffer(GL_ARRAY_BUFFER, s.buffer);
+    for (unsigned i = 1; i < s.gl.attributes; ++i) s.gl.DisableVertexAttribArray(i);
+    s.gl.EnableVertexAttribArray(0);
+    s.gl.VertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+    s.gl.DrawArrays(GL_TRIANGLES, 0, 3);
+    const bool drawn = s.gl.okay(error, "dibujar shader");
+    guard.restore();
+    std::string restored;
+    if (!s.gl.okay(restored, "restaurar SDL tras shader")) { error = restored; return false; }
+    return drawn;
 }
 }

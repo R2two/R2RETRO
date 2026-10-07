@@ -29,11 +29,64 @@ constexpr HandheldOverlay handheldOverlays[] = {
 };
 // Well inside the opaque artwork, away from game apertures and screen edges.
 constexpr SDL_Point overlaySamplePoints[] = {{96,96},{1824,96},{96,984},{1824,984}};
+struct ConsoleLogo {
+    SystemType system;
+    const char* name;
+    SDL_Rect source;
+};
+// Regions of the original 1678x937 PNG, explicitly mapped rather than enum-indexed.
+constexpr ConsoleLogo consoleLogoRegions[] = {
+    {SystemType::Nintendo64,"N64",{124,108,350,310}},
+    {SystemType::GameBoy,"GB",{590,155,523,207}},
+    {SystemType::GameBoyColor,"GBC",{1198,155,428,220}},
+    {SystemType::GameBoyAdvance,"GBA",{24,677,530,84}},
+    {SystemType::SuperNintendo,"SNES",{587,645,536,136}},
+    {SystemType::NintendoEntertainmentSystem,"NES",{1178,608,467,214}}
+};
+SDL_Texture* uploadConsoleLogo(SDL_Renderer* renderer, SDL_Surface* atlas, const ConsoleLogo& logo) {
+    auto fail = [&](const char* stage) -> SDL_Texture* {
+        const auto detail=std::string(logo.name)+"; "+stage+"; "+SDL_GetError();
+        startupLog("Console logo unavailable; using vector icon",detail.c_str());
+        return nullptr;
+    };
+    int width=1,height=1;
+    while(width<logo.source.w) width*=2;
+    while(height<logo.source.h) height*=2;
+    // Small power-of-two allocations avoid depending on a large NPOT atlas.
+    // This is a compatibility candidate, not a diagnosis of the PS4 driver.
+    auto* pixels=SDL_CreateRGBSurfaceWithFormat(0,width,height,32,SDL_PIXELFORMAT_ARGB8888);
+    if(!pixels) return fail("surface");
+    SDL_Rect source=logo.source, destination{0,0,source.w,source.h};
+    bool ready=SDL_FillRect(pixels,nullptr,0)==0 &&
+        SDL_BlitSurface(atlas,&source,pixels,&destination)==0;
+    if(!ready) { fail("copy RGBA"); SDL_FreeSurface(pixels); return nullptr; }
+    auto* texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STATIC,width,height);
+    if(!texture) { fail("create ARGB8888"); SDL_FreeSurface(pixels); return nullptr; }
+    // Unlike SDL_CreateTextureFromSurface, explicitly check pixel upload.
+    ready=SDL_UpdateTexture(texture,nullptr,pixels->pixels,pixels->pitch)==0;
+    if(!ready) fail("upload ARGB8888");
+    SDL_FreeSurface(pixels);
+    if(ready) {
+        ready=SDL_SetTextureBlendMode(texture,SDL_BLENDMODE_BLEND)==0 &&
+            SDL_SetTextureColorMod(texture,255,255,255)==0 && SDL_SetTextureAlphaMod(texture,255)==0;
+#if SDL_VERSION_ATLEAST(2, 0, 12)
+        ready=ready && SDL_SetTextureScaleMode(texture,SDL_ScaleModeLinear)==0;
+#endif
+        if(!ready) fail("texture state");
+    }
+    if(!ready) { SDL_DestroyTexture(texture); return nullptr; }
+    const auto detail=std::string(logo.name)+"; ARGB8888 "+std::to_string(width)+"x"+
+        std::to_string(height)+"; alpha blend; upload accepted (visibility not verified)";
+    startupLog("Console logo uploaded",detail.c_str());
+    return texture;
+}
 }
 GpuProbeResult Video::probeGpu() { return runGpuProbe(window_, renderer_); }
 Video::~Video() {
+    displayShader_.reset(); // GL resources must die before SDL's context.
     releaseGameFrame();
     clearLibraryArtwork();
+    for (auto* texture : consoleLogos_) if (texture) SDL_DestroyTexture(texture);
     for (auto& entry : texts_) SDL_DestroyTexture(entry.second.image);
     for (auto& entry : fonts_) TTF_CloseFont(entry.second);
     for (auto* texture : backgrounds_) if (texture) SDL_DestroyTexture(texture);
@@ -84,9 +137,20 @@ bool Video::initialize(const std::string& assets, std::string& error, VideoBacke
         fonts_[size] = TTF_OpenFont(font.c_str(), size);
         if (!fonts_[size]) { error = TTF_GetError(); return false; }
     }
-    startupLog("Loading background.jpg");
-    if (!loadBackground(assets + "/background.jpg"))
+    startupLog("Loading background-room.jpg");
+    if (!loadBackground(assets + "/background-room.jpg") && !loadBackground(assets + "/background.jpg"))
         warning_ = "No se pudo cargar el fondo: " + std::string(IMG_GetError());
+    // Optional artwork; never make application startup depend on these logos.
+    auto* logos = IMG_Load((assets + "/console-logos.png").c_str());
+    if (!logos) startupLog("Console logos decode failed",IMG_GetError());
+    else if (logos->w != 1678 || logos->h != 937 || !logos->format->Amask)
+        startupLog("Console logos rejected","expected 1678x937 with alpha; using vector icons");
+    // Copy unblended RGBA into transparent surfaces, preserving straight alpha.
+    else if (SDL_SetSurfaceBlendMode(logos,SDL_BLENDMODE_NONE)<0)
+        startupLog("Console logos source blend failed",SDL_GetError());
+    else for(size_t i=0;i<consoleLogos_.size();++i)
+        consoleLogos_[i]=uploadConsoleLogo(renderer_,logos,consoleLogoRegions[i]);
+    if (logos) SDL_FreeSurface(logos);
     startupLog("Video assets ready", warning_.empty() ? "OK" : warning_.c_str());
     return true;
 }
@@ -262,6 +326,17 @@ bool Video::setVSync(bool enabled, std::string& error) {
 #endif
     return false;
 }
+bool Video::setDisplayShader(unsigned mode, std::string& error) {
+    error.clear();
+    displayShaderError_.clear();
+    if (!mode && !displayShader_) return true;
+    if (!displayShader_) displayShader_.reset(new DisplayShader(window_, renderer_));
+    if (displayShader_->select(mode, error)) return true;
+    displayShaderError_ = error;
+    std::string ignored;
+    displayShader_->select(0, ignored);
+    return false;
+}
 void Video::releaseGameFrame() {
     if (gameTexture_) SDL_DestroyTexture(gameTexture_);
     gameTexture_ = nullptr; gameWidth_ = gameHeight_ = 0;
@@ -303,6 +378,26 @@ bool Video::libraryArtwork(int x, int y, int w, int h) {
     destination.x += (w - destination.w) / 2;
     destination.y += (h - destination.h) / 2;
     return SDL_RenderCopy(renderer_, libraryTexture_, nullptr, &destination) == 0;
+}
+bool Video::consoleLogo(SystemType system, int x, int y, int w, int h, uint8_t alpha) {
+    if (w <= 0 || h <= 0 || w > 8192 || h > 8192) return false;
+    size_t index=0;
+    while(index<consoleLogos_.size() && consoleLogoRegions[index].system!=system) ++index;
+    if(index==consoleLogos_.size() || !consoleLogos_[index]) return false;
+    auto*& texture=consoleLogos_[index];
+    SDL_Rect source{0,0,consoleLogoRegions[index].source.w,consoleLogoRegions[index].source.h};
+    SDL_Rect destination{x,y,w,h};
+    if (source.w * h > source.h * w) destination.h = std::max(1,w * source.h / source.w);
+    else destination.w = std::max(1,h * source.w / source.h);
+    destination.x += (w - destination.w) / 2;
+    destination.y += (h - destination.h) / 2;
+    if (SDL_SetTextureColorMod(texture,255,255,255)==0 &&
+        SDL_SetTextureAlphaMod(texture,alpha)==0 && SDL_RenderCopy(renderer_,texture,&source,&destination)==0)
+        return true;
+    const auto detail=std::string(consoleLogoRegions[index].name)+"; "+SDL_GetError();
+    startupLog("Console logo draw failed; using vector icon",detail.c_str());
+    SDL_DestroyTexture(texture); texture=nullptr;
+    return false;
 }
 bool Video::setHandheldOverlay(SystemType system, bool enabled, std::string& error) {
     error.clear();
@@ -505,6 +600,15 @@ bool Video::gameFrame(const uint32_t* pixels, unsigned width, unsigned height, s
     destination.y = viewport.y + (viewport.h - destination.h) / 2;
     if (SDL_RenderCopy(renderer_, gameTexture_, nullptr, &destination) < 0) {
         error = SDL_GetError(); return false;
+    }
+    if (system != SystemType::Nintendo64 && system != SystemType::Unknown && displayShaderMode()) {
+        std::string shaderError;
+        if (!displayShader_->draw(width, height, destination, shaderError)) {
+            displayShaderError_ = shaderError;
+            startupLog("Display shader disabled", shaderError.c_str());
+            std::string ignored;
+            displayShader_->select(0, ignored); // Keep the normal SDL picture; no repeated GL failures.
+        }
     }
     overlayDrawn_ = matchingOverlay;
     if (matchingOverlay && overlayCheckPending_) verifyOverlayComposition();

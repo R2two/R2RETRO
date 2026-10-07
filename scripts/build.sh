@@ -18,6 +18,8 @@ case "$MODE" in
     mkdir -p "$BUILD/payload/assets/fonts" "$BUILD/payload/assets/overlays" "$BUILD/payload/sce_sys" "$BUILD/payload/sce_module" "$BUILD/payload/licenses"
     cp assets/fonts/DejaVuSans.ttf "$BUILD/payload/assets/fonts/"
     cp assets/background.jpg "$BUILD/payload/assets/background.jpg"
+    cp assets/background-room.jpg "$BUILD/payload/assets/background-room.jpg"
+    cp assets/console-logos.png "$BUILD/payload/assets/console-logos.png"
     mkdir -p "$BUILD/payload/assets/certs"
     cp assets/certs/cacert.pem "$BUILD/payload/assets/certs/cacert.pem"
     cp assets/certs/README.md "$BUILD/payload/licenses/CA-bundle.md"

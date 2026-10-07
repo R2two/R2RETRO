@@ -72,6 +72,12 @@ uint64_t Emulator::graphicsLleTasks() const {
 HardwareTiming Emulator::hardwareTiming() const {
     const auto* core = state_->manager.active(); return core ? core->hardwareTiming() : HardwareTiming{};
 }
+EmulationConfig Emulator::effectiveConfig() const {
+    const auto* core = state_->manager.active(); return core ? core->effectiveConfig() : EmulationConfig{};
+}
+const char* Emulator::profileName() const {
+    const auto* core = state_->manager.active(); return core ? core->profileName() : "Sin sesión";
+}
 bool Emulator::supportsSaveStates() const {
     const auto* core = state_->manager.active();
     return core && core->supportsSaveStates();
@@ -95,5 +101,15 @@ bool Emulator::reset(std::string& error) {
     auto* core = state_->manager.active();
     if (!core) { error = "No hay ROM cargada."; return false; }
     return core->reset(error);
+}
+bool Emulator::setGbaFrameskip(unsigned frameskip, std::string& error) {
+    auto* core = state_->manager.active();
+    if (!core) { error = "No hay ROM cargada."; return false; }
+    return core->setGbaFrameskip(frameskip, error);
+}
+bool Emulator::saveBattery(std::string& error) {
+    auto* core = state_->manager.active();
+    if (!core) { error = "No hay ROM cargada."; return false; }
+    return core->saveBattery(error);
 }
 }

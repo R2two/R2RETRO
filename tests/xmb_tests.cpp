@@ -1,5 +1,7 @@
 #include "menu.h"
 #include "ui.h"
+#include "console_library.h"
+#include "core/core_registry.h"
 #include <cstdio>
 #include <filesystem>
 #include <stdexcept>
@@ -10,20 +12,55 @@ static void require(bool condition, const char* message) {
 }
 int main(int argc, char** argv) {
     try {
+        // Mixed roots/names must never leak another console's games into a folder.
+        std::vector<Game> mixed;
+        for (auto system : librarySystems) {
+            Game game;
+            game.system=system; game.title="Same name";
+            game.path=std::string("/usb/mixed/")+systemId(system);
+            mixed.push_back(game);
+        }
+        mixed.push_back(mixed.front());
+        mixed.back().path="/internal/another-n64.z64";
+        mixed.push_back(Game{}); // Unknown content must never become an all-games row.
+        ConsoleLibrary listing;
+        listing.refresh(mixed,SystemType::Unknown);
+        require(listing.games.empty() && listing.counts[0]==2,"root contains only folders with per-console counts");
+        for (auto system : librarySystems) {
+            listing.refresh(mixed,system);
+            require(listing.games.size()==(system==SystemType::Nintendo64 ? 2u : 1u),"folder count mismatch");
+            for (const auto& game : listing.games) require(game.system==system,"foreign ROM leaked into console folder");
+        }
+        for (const auto& core : CoreRegistry::all()) for (auto system : core.systems)
+            require(system==SystemType::Unknown || libraryFolder(system),"registered system missing from console directory");
+        Menu remembered;
+        remembered.openConsole(SystemType::Nintendo64);
+        remembered.handle(Down,2,3,false);
+        remembered.handle(Back,2,3,false);
+        remembered.handle(Confirm,0,3,false);
+        require(remembered.selected()==1 && remembered.librarySystem()==SystemType::Nintendo64,
+            "returning to a console preserves its game selection");
+        remembered.clamp(1,3);
+        require(remembered.selected()==0,"rescan clamps the saved console cursor after removal");
+        listing.refresh({},SystemType::Nintendo64);
+        require(listing.games.empty() && listing.counts[0]==0,"rescan must remove old games and counts");
         Menu menu;
+        require(menu.consoleDirectory(), "library must begin with console folders");
         menu.handle(NextSystem,0,3,false);
-        require(menu.systemFilter == 1 && !menu.details && menu.selected() == 0,
-            "system filter must switch before scanning and reset stale selection");
+        require(menu.consoleDirectory() && !menu.details && menu.selected() == 1,
+            "shoulders at root must select folders without entering them");
         menu.handle(PreviousSystem,0,3,false);
-        require(menu.systemFilter == 0, "system filter must return to all games");
+        require(menu.consoleDirectory() && menu.selected() == 0, "folder selection returns to N64");
         menu.handle(PreviousSystem,0,3,false);
-        require(menu.systemFilter == 6, "previous filter from all must wrap to SNES");
-        menu.handle(PreviousSystem,0,3,false);
-        require(menu.systemFilter == 5, "NES filter missing before SNES");
-        for (unsigned i = 0; i < Menu::SystemFilterCount; ++i) menu.handle(NextSystem,0,3,false);
-        require(menu.systemFilter == 5, "all seven system filters must participate in the cycle");
-        menu.handle(NextSystem,0,3,false); menu.handle(NextSystem,0,3,false);
-        require(menu.systemFilter == 0, "SNES next filter must wrap to all games");
+        require(menu.selected() == librarySystems.size()-1, "previous folder wraps to last console");
+        require(menu.handle(Confirm,0,3,false)==MenuAction::None &&
+            menu.librarySystem()==SystemType::GameBoyAdvance, "confirm must enter GBA even when empty");
+        for (size_t i = 0; i < librarySystems.size(); ++i) menu.handle(NextSystem,0,3,false);
+        require(menu.librarySystem()==SystemType::GameBoyAdvance, "console cycle must never expose all games");
+        menu.handle(Back,0,3,false);
+        require(menu.consoleDirectory() && !menu.exitPrompt && menu.selected()==librarySystems.size()-1,
+            "back must restore the console folder before asking to quit");
+        menu.openConsole(SystemType::Nintendo64);
         require(menu.handle(Confirm,0,3,false)==MenuAction::Scan,"empty library must scan");
         require(menu.handle(Confirm,0,3,true)==MenuAction::None,"must not start a duplicate scan");
         menu.handle(Left,0,3,false);
@@ -92,6 +129,7 @@ int main(int argc, char** argv) {
         require(!menu.gpuRendering,"GPU permits CPU fallback");
         menu.handle(Confirm,2,3,false); // Open details for the shared Back sequence below.
         menu.handle(Back,2,3,false); menu.handle(Back,2,3,false);
+        menu.handle(Back,2,3,false); // Return from the console to the directory.
         require(menu.handle(Back,2,3,false)==MenuAction::None && menu.exitPrompt,"first back must not quit");
         require(menu.handle(Back,2,3,false)==MenuAction::Quit,"second back should quit");
         Menu about;
@@ -106,7 +144,21 @@ int main(int argc, char** argv) {
         about.handle(Down,0,3,false); about.handle(Down,0,3,false);
         require(about.selected()==3 && about.handle(Confirm,0,3,false)==MenuAction::Quit,"quit must occupy the final About row");
         about.selections[2]=99; about.selections[3]=99; about.clamp(0,3);
-        require(about.selections[2]==7 && about.selections[3]==3,"new menu counts must clamp stale selections");
+        require(about.selections[2]==9 && about.selections[3]==3,"new menu counts must clamp stale selections");
+        Menu profiles;
+        require(profiles.automaticProfile,"automatic N64 profiles must be the frontend default");
+        profiles.category=Category::Settings; profiles.selections[2]=8;
+        profiles.handle(Confirm,0,3,false);
+        require(profiles.automaticProfile,"opening profile details must not toggle mode");
+        profiles.handle(Confirm,0,3,false);
+        require(!profiles.automaticProfile,"manual profile selection");
+        profiles.handle(Confirm,0,3,false);
+        require(profiles.automaticProfile,"automatic profile selection");
+        for (size_t row : {3u,4u,5u,7u}) {
+            profiles.automaticProfile=true; profiles.selections[2]=row; profiles.details=true;
+            profiles.handle(Confirm,0,3,false);
+            require(!profiles.automaticProfile,"manual CPU/audio/video changes must override automatic profiles");
+        }
         NavigationRepeat repeat;
         Input input; input.held=Down; input.pressed=Down;
         require(repeat.update(input,0)==Down,"initial navigation press");
@@ -118,6 +170,9 @@ int main(int argc, char** argv) {
         require(repeat.update(input,1200)==0,"disconnect/release must stop repeat");
 
         Menu downloads;
+        require(downloads.handle(DownloadMetadata,1,3,false)==MenuAction::None,
+            "console folders must never download metadata for a game");
+        downloads.openConsole(SystemType::Nintendo64);
         require(downloads.handle(DownloadMetadata,0,3,false)==MenuAction::None,
             "empty library must not request metadata");
         require(downloads.handle(DownloadMetadata,1,3,true)==MenuAction::None,
@@ -142,10 +197,10 @@ int main(int argc, char** argv) {
         std::string error;
         const bool accelerated = argc == 2 && std::strcmp(argv[1], "--accelerated") == 0;
         require(video.initialize(R2N64_ASSETS,error,accelerated ? VideoBackend::Accelerated : VideoBackend::Software),error.c_str());
-        require(video.backgroundReady(),"supplied JPG must decode");
+        require(video.backgroundReady(),"home background must decode");
         std::filesystem::create_directories("previews");
         std::vector<Game> games;
-        View view; view.games=&games; view.version="0.4.1"; view.storage=true; view.background=true;
+        View view; view.games=&games; view.version="0.5.3"; view.storage=true; view.background=true;
         view.desktop=true; view.dataPath="/data/R2N64";
         view.roots={"/data/R2N64/roms","/mnt/usb0/R2N64/roms","/mnt/usb1/R2N64/roms"};
         view.platform="Desktop: prueba de frontend SDL2";
@@ -156,6 +211,8 @@ int main(int argc, char** argv) {
             require(video.present(error),error.c_str());
         };
         snapshot("previews/xmb-empty.png");
+        view.menu.openConsole(SystemType::GameBoyAdvance);
+        snapshot("previews/xmb-console-empty.png");
         view.menu.handle(Right,0,3,false); view.menu.handle(Confirm,0,3,false);
         snapshot("previews/xmb-storage.png");
         view.menu.handle(Diagnostics,0,3,false);
@@ -174,6 +231,10 @@ int main(int argc, char** argv) {
         snapshot("previews/xmb-gpu-rendering-off.png");
         view.menu.handle(Confirm,0,3,false);
         snapshot("previews/xmb-gpu-rendering-on.png");
+        view.menu.selections[2]=8; view.menu.automaticProfile=true;
+        snapshot("previews/xmb-n64-profile-auto.png");
+        view.menu.automaticProfile=false;
+        snapshot("previews/xmb-n64-profile-manual.png");
         view.menu.handle(Right,0,3,false); view.menu.handle(Confirm,0,3,false);
         snapshot("previews/xmb-about.png");
         view.menu.handle(Down,0,3,false); view.menu.handle(Down,0,3,false);
@@ -186,22 +247,33 @@ int main(int argc, char** argv) {
         fixture.path="/data/R2N64/roms/synthetic.z64";
         games.push_back(fixture);
         view.menu=Menu{};
+        view.consoleCounts[libraryFolder(fixture.system)-1]=1;
+        snapshot("previews/xmb-consoles.png");
+        for (size_t i=0; i<librarySystems.size(); ++i) {
+            view.menu.selections[0]=i;
+            require(video.consoleLogo(librarySystems[i],1260,480,520,280),"console logo must be available");
+            const std::string logoPreview="previews/xmb-logo-"+std::string(systemId(librarySystems[i]))+".png";
+            snapshot(logoPreview.c_str());
+        }
+        require(!video.consoleLogo(SystemType::Unknown,0,0,100,100),"unknown system must not inherit a logo");
+        view.menu.selections[0]=0;
+        view.menu.openConsole(SystemType::Nintendo64);
         view.menu.handle(Confirm,1,3,false);
         snapshot("previews/xmb-rom-details.png");
         games[0].system=SystemType::GameBoy;
         games[0].title="Prueba original Game Boy";
         games[0].path="/data/R2N64/roms/gb/diagnostic.gb";
-        view.menu.systemFilter=1;
+        view.menu.openConsole(SystemType::GameBoy); view.menu.details=true;
         snapshot("previews/xmb-gameboy-details.png");
         games[0].system=SystemType::NintendoEntertainmentSystem;
         games[0].title="Prueba original NES";
         games[0].path="/data/R2N64/roms/nes/diagnostic.nes";
-        view.menu.systemFilter=5;
+        view.menu.openConsole(SystemType::NintendoEntertainmentSystem); view.menu.details=true;
         snapshot("previews/xmb-nes-details.png");
         games[0].system=SystemType::SuperNintendo;
         games[0].title="Prueba original Super Nintendo";
         games[0].path="/data/R2N64/roms/snes/diagnostic.sfc";
-        view.menu.systemFilter=6;
+        view.menu.openConsole(SystemType::SuperNintendo); view.menu.details=true;
         snapshot("previews/xmb-snes-details.png");
 
         LibraryMetadata metadata;
@@ -231,6 +303,20 @@ int main(int argc, char** argv) {
         view.desktop=false;
         snapshot("previews/xmb-library-partial.png");
         view.metadata=nullptr; view.libraryStatus.clear();
+        view.menu.category=Category::Settings; view.menu.selections[2]=9;
+        require(view.menu.handle(Confirm,1,3,false)==MenuAction::Updates,"updates menu action");
+        view.updatesOpen=true; view.updateAvailable=true; view.updateDownloaded=true;
+        view.updateRelease.version="0.5.4"; view.updateRelease.size=64*1024*1024;
+        view.updateRelease.notes="Mejoras de compatibilidad y nuevas opciones. Versión experimental.";
+        view.updateSelection=4; view.updateConfirm=true;
+        view.updateStatus="PKG verificado. Selecciona Instalar y cerrar cuando estés listo.";
+        snapshot("previews/xmb-update-confirm.png");
+        view.updateConfirm=false; view.updateBusy=true; view.updateStatus="Descarga: 32 / 64 MiB. Se verificará antes de instalar.";
+        snapshot("previews/xmb-update-download.png");
+        view.updateDiagnostic="DNS HTTPS (Cloudflare) · Resolviendo DNS / conectando · 45 s";
+        view.updateStatus="Sin respuesta: cancelación solicitada. Círculo vuelve al menú; espera el cierre antes de reintentar.";
+        snapshot("previews/xmb-update-dns.png");
+        view.updatesOpen=false;
         renderUI(video,view); require(video.present(error),error.c_str());
         // Render each contrast preset and a long UTF-8 title without corrupting glyphs.
         games[0].title=std::string(180,'A')+" — edición de prueba 日本語";
