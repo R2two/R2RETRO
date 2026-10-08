@@ -27,7 +27,9 @@ python3 "$ROOT/scripts/prepare-console-cores.py" "$ROOT" "$BUILD"
 CC=cc
 CXX=c++
 AR=ar
-FLAGS='-O2 -fPIC -ffunction-sections -fdata-sections'
+# No -fdata-sections: it splits .data into .data.<name>, which the PS4 SELF
+# loader does not map, zeroing initialized globals (NES palette was black).
+FLAGS='-O2 -fPIC'
 CXX_ONLY=''
 LINK_ARGS=()
 if [[ "$TARGET" == ps4 ]]; then

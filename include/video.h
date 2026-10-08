@@ -106,10 +106,10 @@ private:
     bool gameLinearFilter_ = false, gameScaleModeSet_ = false;
     bool gamePixelsReady_ = false;
     std::array<SDL_Texture*, 3> backgrounds_{};
-    std::array<SDL_Texture*, 4> overlays_{};
-    std::array<std::vector<uint8_t>, 4> overlayBytes_;
-    std::array<std::string, 4> overlayReadErrors_;
-    std::array<std::array<uint32_t, 4>, 4> overlaySamples_{};
+    std::array<SDL_Texture*, 5> overlays_{};
+    std::array<std::vector<uint8_t>, 5> overlayBytes_;
+    std::array<std::string, 5> overlayReadErrors_;
+    std::array<std::array<uint32_t, 4>, 5> overlaySamples_{};
     int overlayIndex_ = -1;
     bool overlayDrawn_ = false, overlayCheckPending_ = false;
     std::string overlayDetail_;

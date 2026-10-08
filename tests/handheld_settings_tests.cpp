@@ -110,9 +110,9 @@ int main() {
         for (const auto system : {SystemType::NintendoEntertainmentSystem, SystemType::SuperNintendo}) {
             HandheldSettings consoleDefaults;
             consoleDefaults.integerScaling = false;
-            consoleDefaults.overlay = system == SystemType::SuperNintendo;
+            consoleDefaults.overlay = true; // NES and SNES console artwork defaults on
             require(loadHandheldSettings(root.string(), system, loaded, error) && equal(loaded, consoleDefaults),
-                    "NES/SNES must default to 4:3; only SNES artwork defaults on");
+                    "NES/SNES must default to 4:3 with their console artwork on");
             const auto file = directory / (std::string(systemId(system)) + ".json");
             require(!fs::exists(file), "loading console defaults should not write a file");
             const HandheldSettings changed{8, 4, true, true, 0, false, false};

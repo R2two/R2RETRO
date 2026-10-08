@@ -1,8 +1,8 @@
 # R2RETRO
 
-**Versión actual: v0.5.6 experimental.** En un juego GB, **L3+R3 → Color GB** activa o desactiva una paleta de cuatro colores; al continuar se aplica y al apagar recupera la paleta anterior. Se guarda por sistema y puede combinarse con Shader LCD/CRT. No convierte el juego en GBC. GB/GBC/GBA/NES/SNES conservan shaders y escritura SRAM/RTC desde pausa; GBA ofrece salto de cuadros 0/1/2. La SRAM no sustituye Guardar dentro del juego. Información/carátulas y actualizaciones usan Cloudflare DoH fijo sin cambiar el DNS PS4. [Notas y límites](releases/v0.5.6.md).
+**Versión actual: v0.5.7 experimental.** NES ya no sale en negro en PS4 y cuenta con un marco de consola (activo por defecto, conmutable en **L3+R3 → Marco**). En un juego GB, **L3+R3 → Color GB** activa o desactiva una paleta de cuatro colores; al continuar se aplica y al apagar recupera la paleta anterior. GB/GBC/GBA/NES/SNES conservan shaders y escritura SRAM/RTC desde pausa; GBA ofrece salto de cuadros 0/1/2. Información/carátulas y actualizaciones usan Cloudflare DoH fijo sin cambiar el DNS PS4. [Notas y límites](releases/v0.5.7.md).
 
-**Primera instalación de v0.5.6: manual por USB o FTP + Package Installer HDD de GoldHEN, sobre la versión anterior y sin desinstalar.** La corrección de rutas del instalador sólo se aplica una vez instalada; BGFT sobre sí misma sigue pendiente de prueba física. Acerca de incluye autoría Rtwo / R2 y Ko-fi.
+**Instalación de v0.5.7: manual por USB o FTP + Package Installer HDD de GoldHEN, sobre la versión anterior y sin desinstalar.** BGFT sobre sí misma sigue pendiente de prueba física. Acerca de incluye autoría Rtwo / R2 y Ko-fi.
 
 Las secciones por versión siguientes describen su comportamiento histórico.
 

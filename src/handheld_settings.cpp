@@ -37,7 +37,9 @@ HandheldSettings defaultsFor(SystemType system) {
     HandheldSettings result;
     if (system == SystemType::NintendoEntertainmentSystem || system == SystemType::SuperNintendo) {
         result.integerScaling = false; // CRT-era consoles use 4:3 by default.
-        result.overlay = system == SystemType::SuperNintendo;
+        // NES and SNES ship a console-frame overlay enabled for new preferences;
+        // an explicit overlay=false in an existing file is always preserved.
+        result.overlay = true;
     }
     return result;
 }

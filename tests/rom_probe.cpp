@@ -94,7 +94,7 @@ GamepadInput scriptedInput(unsigned vi, bool scripted, SystemType system = Syste
 }
 void png(const CoreFrame& frame, const fs::path& path) {
     require(frame.width && frame.height && !frame.pixels.empty(), "Cannot capture a missing frame");
-    // RGB888 has no alpha channel: the core's X byte is commonly zero.
+    // RGB888 ignores the high byte; CoreFrame stores opaque 0xFFRRGGBB.
     SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormatFrom(
         const_cast<uint32_t*>(frame.pixels.data()), static_cast<int>(frame.width), static_cast<int>(frame.height),
         32, static_cast<int>(frame.width * 4), SDL_PIXELFORMAT_RGB888);

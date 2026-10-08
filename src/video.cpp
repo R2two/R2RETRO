@@ -23,6 +23,9 @@ constexpr HandheldOverlay handheldOverlays[] = {
     {SystemType::GameBoy, "gb.png", {552,166,816,748}, {552,166,816,748}},
     {SystemType::GameBoyColor, "gbc.png", {552,166,816,748}, {552,166,816,748}},
     {SystemType::GameBoyAdvance, "gba.png", {310,106,1300,868}, {310,106,1300,868}},
+    // The PNG carries a transparent screen hole; the matte covers it so the
+    // game is drawn on black inside the console bezel.
+    {SystemType::NintendoEntertainmentSystem, "nes.png", {258,18,1404,1044}, {258,18,1404,1044}},
     // The JPEG's curved white screen and its halo extend past the safe game
     // aperture. Cover the central screen only; preserve both original panels.
     {SystemType::SuperNintendo, "snes.jpg", {260,24,1400,1032}, {240,0,1440,1080}}
@@ -409,7 +412,7 @@ bool Video::setHandheldOverlay(SystemType system, bool enabled, std::string& err
     int index = -1;
     for (size_t i = 0; i < overlays_.size(); ++i)
         if (handheldOverlays[i].system == system) index = static_cast<int>(i);
-    if (index < 0) { error = "Los marcos solo están disponibles para GB, GBC, GBA y SNES"; return false; }
+    if (index < 0) { error = "Los marcos solo están disponibles para GB, GBC, GBA, NES y SNES"; return false; }
     if (!renderer_) { error = "El renderer no está inicializado"; return false; }
     if (!overlays_[index]) {
         // The user's artwork remains unchanged on disk, including its opaque
@@ -525,10 +528,11 @@ bool Video::gameFrame(const uint32_t* pixels, unsigned width, unsigned height, s
 #if !SDL_VERSION_ATLEAST(2, 0, 12)
         SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
 #endif
-        // CoreFrame is XRGB, not alpha-bearing artwork. Its high byte is
-        // undefined for libretro XRGB8888 and zero for converted 16-bit frames.
-        // Declare an opaque texture so it cannot become transparent on GLES.
-        gameTexture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGB888,
+        // CoreFrame is opaque ARGB8888 (0xFFRRGGBB). Prefer the canonical
+        // 32-bit GLES2 format over packed 24-bit RGB888, whose support is
+        // spottier on console GLES2 drivers (Piglet). BlendModeNONE is kept so
+        // the alpha byte is never blended, only treated as fully visible.
+        gameTexture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_ARGB8888,
                                          SDL_TEXTUREACCESS_STREAMING, width, height);
         if (!gameTexture_) { error = SDL_GetError(); return false; }
         if (SDL_SetTextureBlendMode(gameTexture_, SDL_BLENDMODE_NONE) < 0) {
@@ -560,11 +564,12 @@ bool Video::gameFrame(const uint32_t* pixels, unsigned width, unsigned height, s
     SDL_Rect viewport{0,0,1920,1080};
     // Explicit systems must match the selected artwork. Legacy handheld calls
     // may still opt in through nativeAspect; an omitted system never opts into
-    // the SNES overlay, so old/default N64 calls cannot inherit its artwork.
+    // the NES/SNES overlays, so old/default N64 calls cannot inherit artwork.
     const bool matchingOverlay = overlayIndex_ >= 0 &&
         (handheldOverlays[overlayIndex_].system == system ||
          (system == SystemType::Unknown && nativeAspect &&
-          handheldOverlays[overlayIndex_].system != SystemType::SuperNintendo));
+          handheldOverlays[overlayIndex_].system != SystemType::SuperNintendo &&
+          handheldOverlays[overlayIndex_].system != SystemType::NintendoEntertainmentSystem));
     if (matchingOverlay) {
         if (SDL_RenderCopy(renderer_, overlays_[overlayIndex_], nullptr, nullptr) < 0) {
             error = SDL_GetError(); return false;

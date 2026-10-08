@@ -475,7 +475,11 @@ struct LibretroCore::State {
             for (unsigned y = 0; y < height; ++y) {
                 auto* target = s.frame.pixels.data() + static_cast<size_t>(y) * width;
                 const auto* source = static_cast<const unsigned char*>(data) + static_cast<size_t>(y) * pitch;
-                if (s.pixelFormat == RETRO_PIXEL_FORMAT_XRGB8888) std::memcpy(target, source, width * 4);
+                if (s.pixelFormat == RETRO_PIXEL_FORMAT_XRGB8888) {
+                    std::memcpy(target, source, width * 4);
+                    // Force the alpha byte to opaque: CoreFrame is ARGB8888.
+                    for (unsigned x = 0; x < width; ++x) target[x] |= 0xFF000000u;
+                }
                 else for (unsigned x = 0; x < width; ++x) {
                     uint16_t pixel;
                     std::memcpy(&pixel, source + x * 2, sizeof(pixel));
@@ -483,7 +487,7 @@ struct LibretroCore::State {
                     const unsigned g = (pixel >> 5) & (s.pixelFormat == RETRO_PIXEL_FORMAT_RGB565 ? 63 : 31);
                     const unsigned b = pixel & 31;
                     const unsigned green = s.pixelFormat == RETRO_PIXEL_FORMAT_RGB565 ? (g << 2) | (g >> 4) : (g << 3) | (g >> 2);
-                    target[x] = (((r << 3) | (r >> 2)) << 16) | (green << 8) | (b << 3) | (b >> 2);
+                    target[x] = 0xFF000000u | (((r << 3) | (r >> 2)) << 16) | (green << 8) | (b << 3) | (b >> 2);
                 }
             }
             s.frame.width = width;

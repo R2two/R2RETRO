@@ -11,7 +11,7 @@ app, fixtures, output = (Path(arg).resolve() for arg in sys.argv[1:4])
 output.mkdir(parents=True, exist_ok=True)
 run = Path(tempfile.mkdtemp(prefix="sessions-", dir=output))
 for system, extension, factor, slot, integer, linear, stats, overlay, write_config in (
-    ("nes", "nes", 2, 0, False, False, True, False, False),
+    ("nes", "nes", 2, 0, False, False, True, True, False),
     ("snes", "sfc", 2, 0, False, False, True, True, False),
     ("nes", "nes", 4, 3, True, True, False, False, True),
     ("snes", "sfc", 8, 4, True, False, False, False, True),
@@ -39,11 +39,8 @@ for system, extension, factor, slot, integer, linear, stats, overlay, write_conf
         f"entero={int(integer)}; suavizado={int(linear)}; paleta=0; marco={int(overlay)}; estadísticas={int(stats)}")
     assert log.count(expected) == 2, "Console preferences/defaults did not survive both sessions"
     assert "Marco no disponible" not in log, "Console artwork could not load"
-    if system == "snes":
-        assert log.count(f"Marco snes: preferencia={int(overlay)}; activo={int(overlay)}") == 2, \
-            "SNES default/saved artwork preference was not applied in both sessions"
-    else:
-        assert f"Marco {system}:" not in log, "NES must not enable unsupported artwork"
+    assert log.count(f"Marco {system}: preferencia={int(overlay)}; activo={int(overlay)}") == 2, \
+        f"{system} default/saved artwork preference was not applied in both sessions"
     assert log.count(f"Velocidad solicitada: {factor}x;") == 2
     assert log.count("Velocidad solicitada: 1x; audio normal") == 2
     assert log.count("transiciones 2; audio reanudado=1; audio limpio al cerrar") == 2

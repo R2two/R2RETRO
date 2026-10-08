@@ -26,7 +26,7 @@ case "$MODE" in
     cp assets/certs/MPL-2.0.txt "$BUILD/payload/licenses/CA-MPL-2.0.txt"
     mkdir -p "$BUILD/payload/licenses/network"
     cp assets/licenses/network/* "$BUILD/payload/licenses/network/"
-    cp assets/overlays/gb.png assets/overlays/gbc.png assets/overlays/gba.png assets/overlays/snes.jpg "$BUILD/payload/assets/overlays/"
+    cp assets/overlays/gb.png assets/overlays/gbc.png assets/overlays/gba.png assets/overlays/nes.png assets/overlays/snes.jpg "$BUILD/payload/assets/overlays/"
     cp assets/README.md "$BUILD/payload/licenses/App-artwork.md"
     cp assets/overlays/README.md "$BUILD/payload/licenses/Overlay-artwork.md"
     cp assets/diagnostic.z64 "$BUILD/payload/assets/diagnostic.z64"

@@ -250,7 +250,7 @@ int main(int argc, char** argv) {
             require(!competitor.load(path.string(), root.string(), log, error, {}), "Concurrent core session accepted");
             require(!core.supportsSaveStates(), "Unstarted core advertised save states");
             require(core.run(pad, error), error);
-            const std::vector<uint32_t> expected{0x00FF0000, 0x0000FF00, 0x000000FF, 0x00FFFFFF};
+            const std::vector<uint32_t> expected{0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFFFF};
             require(core.frame().width == 2 && core.frame().height == 2 && core.frame().pixels == expected,
                     "Pixel conversion or row pitch changed colors");
             require(core.audio() == std::vector<int16_t>({100, -200, 300, -400}) && core.sampleRate() == 48000,

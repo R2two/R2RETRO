@@ -63,7 +63,8 @@ if p.read_text() != s:
 PY
 CC=cc
 AR=ar
-COMMON_FLAGS='-O2 -fPIC -ffunction-sections -fdata-sections'
+# No -fdata-sections: PS4 SELF loader does not map split .data.<name> sections.
+COMMON_FLAGS='-O2 -fPIC'
 CMAKE_ARGS=()
 if [[ "$TARGET" == ps4 ]]; then
     MGBA_BUILD="$BUILD/mgba-openorbis-build"

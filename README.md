@@ -4,14 +4,14 @@
 <p align="center">Seis sistemas clásicos. Una biblioteca. Una interfaz inspirada en XMB.</p>
 
 <p align="center">
-  <img alt="Versión experimental" src="https://img.shields.io/badge/versi%C3%B3n-0.5.6%20experimental-8957e5">
+  <img alt="Versión experimental" src="https://img.shields.io/badge/versi%C3%B3n-0.5.7%20experimental-8957e5">
   <img alt="PS4 homebrew" src="https://img.shields.io/badge/plataforma-PS4%20homebrew-0070d1">
   <img alt="C++17 y SDL2" src="https://img.shields.io/badge/stack-C%2B%2B17%20%2B%20SDL2-00bcd4">
   <img alt="Licencia del código" src="https://img.shields.io/badge/c%C3%B3digo-GPL--3.0--or--later-238636">
 </p>
 
 <p align="center">
-  <a href="https://github.com/R2two/R2RETRO/releases/tag/v0.5.6"><b>Descargar PKG</b></a> ·
+  <a href="https://github.com/R2two/R2RETRO/releases/tag/v0.5.7"><b>Descargar PKG</b></a> ·
   <a href="docs/USER-GUIDE.md">Guía de uso</a> ·
   <a href="docs/ROADMAP.md">Próximos pasos</a> ·
   <a href="https://github.com/R2two/R2RETRO/issues">Reportar un problema</a>
@@ -25,7 +25,7 @@
 
 ![Biblioteca XMB de R2RETRO, captura desktop v0.4.2](docs/media/xmb-v042.png)
 
-*Biblioteca y navegación XMB: captura real del frontend desktop v0.4.2. La descarga actual es v0.5.6.*
+*Biblioteca y navegación XMB: captura real del frontend desktop v0.4.2. La descarga actual es v0.5.7.*
 
 | Nintendo 64 · GPU + HLE | SNES · marco opcional |
 |---|---|
@@ -44,7 +44,7 @@
 | Game Boy | SameBoy | `.gb` | Paletas, marco, guardados, estados y avance rápido integrados. |
 | Game Boy Color | SameBoy | `.gbc` | Colores nativos, marco, guardados, estados y avance rápido integrados. |
 | Game Boy Advance | mGBA | `.gba` | Marco, guardados, estados y avance rápido; logs DMA agrupados. |
-| NES | FCEUmm | `.nes` | iNES/NES 2.0 y guardados; seguimiento de pantalla negra reportada en PS4. |
+| NES | FCEUmm | `.nes` | iNES/NES 2.0, guardados y marco de consola; pantalla negra en PS4 corregida. |
 | SNES | bsnes-mercury Performance | `.sfc` · `.smc` | Imagen 4:3 y marco opcional; limitaciones específicas de chips y estados. |
 
 ## Lo que ya puedes usar
@@ -52,38 +52,38 @@
 - **Biblioteca multisistema:** escaneo de almacenamiento interno y USB, filtro por sistema y selección automática del núcleo.
 - **Fichas y carátulas:** descarga manual HTTPS desde Libretro, identificación por contenido y caché sin conexión.
 - **Partidas y estados:** SRAM/RTC según el núcleo, datos separados por sistema y cinco espacios de estado en GB/GBC/GBA/NES/SNES cuando están disponibles.
-- **Imagen personalizada:** marcos GB/GBC/GBA/SNES, paletas GB y preferencias de vídeo por sistema en portátiles/NES/SNES.
+- **Imagen personalizada:** marcos GB/GBC/GBA/NES/SNES, paletas GB y preferencias de vídeo por sistema en portátiles/NES/SNES.
 - **Avance rápido:** objetivos 2×/4×/8× en portátiles/NES/SNES, audio silenciado mientras se mantiene R2. La velocidad depende del rendimiento disponible.
 - **Capturas PNG:** juego y marco desde el menú de pausa, guardadas por sistema.
 - **Diagnóstico N64:** programa de prueba original incluido, medición opcional y prueba GPU manual.
 - **DualShock 4:** navegación, pausa y controles por sistema. Actualmente un mando, sin vibración.
 
-### Novedades de v0.5.6
+### Novedades de v0.5.7
 
-**Color GB on/off** desde L3+R3: paleta de cuatro colores combinable con LCD/CRT, con retorno a la paleta anterior. Ajustes de región NES y diagnósticos NES/SNES ampliados, reutilización de texturas y cuadros duplicados de mGBA. Corrección de rutas del instalador y Acerca de con autoría Rtwo / R2 y Ko-fi.
+**NES ya no sale en negro en PS4:** se corrigió la carga de la paleta (sección de datos no mapeada por el cargador SELF) y se añadió un **marco de consola para NES**, activo por defecto y conmutable en pausa. La textura del juego pasa a ARGB8888 opaco. Confirmado en consola por el usuario.
 
-52/52 pruebas locales aprobadas y PKG PS4 validado. **Instala esta primera corrección manualmente por USB o FTP + Package Installer HDD, sin desinstalar.** La autoactualización sobre sí misma y el funcionamiento de v0.5.6 en PS4 quedan pendientes; no hay nueva mejora de velocidad N64 medida.
+52/52 pruebas locales aprobadas y PKG PS4 validado. **Instala manualmente por USB o FTP + Package Installer HDD, sin desinstalar.**
 
-[Notas de versión](docs/releases/v0.5.6.md) · [Color GB](docs/GB-COLORIZATION.md) · [Historial](CHANGELOG.md)
+[Notas de versión](docs/releases/v0.5.7.md) · [Detalle del arreglo y el marco](docs/NES-PALETTE-AND-OVERLAY.md) · [Historial](CHANGELOG.md)
 
 ## Descargar e instalar
 
-**[R2RETRO v0.5.6 — PKG y verificación](https://github.com/R2two/R2RETRO/releases/tag/v0.5.6)**
+**[R2RETRO v0.5.7 — PKG y verificación](https://github.com/R2two/R2RETRO/releases/tag/v0.5.7)**
 
 | Dato | Valor |
 |---|---|
-| Paquete | `R2RETRO-v0.5.6-color-stability.pkg` |
-| Tamaño exacto | 65,994,752 bytes · 62.94 MiB |
+| Paquete | `R2RETRO-v0.5.7-nes-fix-overlay.pkg` |
+| Tamaño exacto | 70,582,272 bytes · 67.31 MiB |
 | Tipo | Pre-release experimental para PS4 homebrew |
-| Title ID / SFO | `RNTD00064` / `00.56` |
+| Title ID / SFO | `RNTD00064` / `00.57` |
 | Datos compatibles | `/data/R2N64` |
 
 ```text
 SHA-256
-1d0b3f1ae2580fc9ee0218606206da0bc53e3029e481535038393e1d607172be
+7abd7c43e1187e1b5d1f1e1649c10c7fde201d8f1b940bf9be1b08526e10b104
 ```
 
-1. Descarga el `.pkg` desde **Releases** y compara su SHA-256 con el [archivo de verificación](docs/releases/R2RETRO-v0.5.6-color-stability.pkg.sha256).
+1. Descarga el `.pkg` desde **Releases** y compara su SHA-256 con el [archivo de verificación](docs/releases/R2RETRO-v0.5.7-nes-fix-overlay.pkg.sha256).
 2. En una PS4 con un entorno homebrew compatible y GoldHEN ya configurado, instala el paquete con su instalador de PKG y abre **R2RETRO**. La combinación exacta de firmware/GoldHEN soportada no está certificada.
 3. Para una primera comprobación sin juegos, abre **Acerca de → Prueba Nintendo 64**.
 4. Coloca tus ROMs propias en `/data/R2N64/roms/` o en `R2N64/roms/` dentro de un USB reconocido por la consola.

@@ -33,7 +33,9 @@ struct EmulationConfig {
 };
 struct HardwareTiming { double beginMs = 0, endMs = 0; uint64_t calls = 0; };
 struct CoreFrame {
-    // Frontend-owned numeric 0x00RRGGBB, regardless of the core's source format.
+    // Frontend-owned opaque 0xFFRRGGBB (ARGB8888), regardless of the core's
+    // source format. The high byte is forced opaque so that renderers which
+    // sample alpha (instead of ignoring an XRGB pad) treat the frame as visible.
     std::vector<uint32_t> pixels;
     unsigned width = 0, height = 0;
     bool hardware = false;

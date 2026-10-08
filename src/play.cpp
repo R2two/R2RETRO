@@ -74,7 +74,8 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
     const bool handheldSystem = emulator_.system() == SystemType::GameBoy ||
         emulator_.system() == SystemType::GameBoyColor || emulator_.system() == SystemType::GameBoyAdvance;
     const bool snes = emulator_.system() == SystemType::SuperNintendo;
-    const bool overlaySystem = handheldSystem || snes;
+    const bool nes = emulator_.system() == SystemType::NintendoEntertainmentSystem;
+    const bool overlaySystem = handheldSystem || snes || nes;
     std::string shaderError;
     if (!video_.setDisplayShader(extended ? handheld.shader : 0, shaderError))
         log_.write("WARNING", shaderError);
@@ -390,7 +391,7 @@ bool App::play(const std::string& path, const std::string& title, std::string& e
         // Inspect only on pause (or the first output), never every active
         // frame. This distinguishes a black core buffer from presentation
         // failure on hardware that cannot be reproduced on the desktop.
-        if ((paused || frames == 1) && inspectedVideoFrame != frames) {
+        if ((paused || frames == 1 || frames == 180) && inspectedVideoFrame != frames) {
             inspectedVideoFrame = frames;
             const auto visible = std::count_if(frame.pixels.begin(), frame.pixels.end(),
                 [](uint32_t pixel) { return (pixel & 0xffffffu) != 0; });

@@ -180,16 +180,17 @@ int main(int argc, char** argv) {
             require(video.preloadOverlayAssets(error),error);
             video.setAssetPath(""); // Original PNG/JPEG must decode from preserved bytes.
             for (auto system : {SystemType::GameBoy, SystemType::GameBoyColor, SystemType::GameBoyAdvance,
-                                SystemType::SuperNintendo}) {
+                                SystemType::SuperNintendo, SystemType::NintendoEntertainmentSystem}) {
                 const bool snes = system == SystemType::SuperNintendo;
-                const unsigned width = snes ? 256 : system == SystemType::GameBoyAdvance ? 240 : 160;
-                const unsigned height = snes ? 224 : system == SystemType::GameBoyAdvance ? 160 : 144;
+                const bool nes = system == SystemType::NintendoEntertainmentSystem;
+                const unsigned width = (snes || nes) ? 256 : system == SystemType::GameBoyAdvance ? 240 : 160;
+                const unsigned height = (snes || nes) ? 224 : system == SystemType::GameBoyAdvance ? 160 : 144;
                 std::vector<uint32_t> pattern(width * height);
                 const uint32_t colors[] = {0xffe18a,0x82cda8,0x699dcc,0x495575};
                 for (unsigned y = 0; y < height; ++y) for (unsigned x = 0; x < width; ++x)
                     pattern[y * width + x] = (x % 16 == 0 || y % 16 == 0) ? 0x252a40 : colors[(x / 32 + y / 32) % 4];
                 require(video.setHandheldOverlay(system,true,error), error);
-                require(video.gameFrame(pattern.data(),width,height,error,!snes,false,!snes,system), error);
+                require(video.gameFrame(pattern.data(),width,height,error,!snes && !nes,false,!snes && !nes,system), error);
                 const auto pixels = capture(video,directory / (std::string(systemId(system)) + "-artwork.png"));
                 if (snes) {
                     const auto original = imagePixels(fs::path(R2N64_ASSETS) / "overlays/snes.jpg");
@@ -204,7 +205,7 @@ int main(int argc, char** argv) {
                 }
                 require(video.present(error),error);
             }
-            std::puts("PASS: original GB/GBC/GBA/SNES artwork loaded; SNES side panels unchanged and no white screen halo; diagnostic previews captured (no game ROM).");
+            std::puts("PASS: original GB/GBC/GBA/SNES/NES artwork loaded; SNES side panels unchanged and no white screen halo; diagnostic previews captured (no game ROM).");
             return 0;
         }
         const unsigned initialCreates = textureCreates;
@@ -216,7 +217,7 @@ int main(int argc, char** argv) {
             require(video.present(error), error);
         };
         frame(160,144,true,true,{400,36,1120,1008},"gb-integer.png");
-        require(lastStreamingFormat == SDL_PIXELFORMAT_RGB888, "Core XRGB frame was uploaded as alpha-bearing artwork");
+        require(lastStreamingFormat == SDL_PIXELFORMAT_ARGB8888, "Core opaque frame was not uploaded as canonical 32-bit ARGB8888");
         require(textureCreates == initialCreates + 1, "First frame did not allocate exactly one streaming texture");
         const unsigned gbFilters = filterChanges;
         frame(160,144,false,true,{360,0,1200,1080},"gb-fit.png");
@@ -334,8 +335,11 @@ int main(int argc, char** argv) {
         const auto overlayFrame = [&](unsigned width, unsigned height, bool integerScaling, SDL_Rect aperture,
                                       SDL_Rect bounds, const char* name, SystemType system = SystemType::Unknown) {
             std::vector<uint32_t> source(size_t(width) * height,0xffffff);
+            // NES/SNES keep the television 4:3 fit; only GB/GBC/GBA use native aspect.
+            const bool nativeAspect = system != SystemType::SuperNintendo &&
+                                      system != SystemType::NintendoEntertainmentSystem;
             require(video.gameFrame(source.data(),width,height,error,integerScaling,false,
-                                    system != SystemType::SuperNintendo,system),error);
+                                    nativeAspect,system),error);
             verifyOverlay(capture(video,directory / name),aperture,bounds);
             require(video.present(error),error);
         };
@@ -481,7 +485,7 @@ int main(int argc, char** argv) {
         auto* artworkSurface = SDL_CreateRGBSurfaceWithFormat(0,1920,1080,32,SDL_PIXELFORMAT_ARGB8888);
         require(artworkSurface != nullptr,"Cannot allocate original test artwork");
         SDL_FillRect(artworkSurface,nullptr,0xff000000u | overlayColor);
-        for (const auto* name : {"gb.png","gbc.png","gba.png","snes.jpg"})
+        for (const auto* name : {"gb.png","gbc.png","gba.png","nes.png","snes.jpg"})
             require(IMG_SavePNG(artworkSurface,(preloadRoot / "overlays" / name).c_str()) == 0,
                     "Cannot encode fixture artwork");
         SDL_FreeSurface(artworkSurface);
@@ -490,29 +494,32 @@ int main(int argc, char** argv) {
         require(video.preloadOverlayAssets(error),error);
         require(overlayTextureCreates == texturesBeforePreload && memoryImageLoads == decodesBeforePreload,
                 "Preload decoded artwork or allocated GPU textures before first use");
-        for (const auto* name : {"gb.png","gbc.png","gba.png","snes.jpg"})
+        for (const auto* name : {"gb.png","gbc.png","gba.png","nes.png","snes.jpg"})
             require(fs::remove(preloadRoot / "overlays" / name), "Cannot retire fixture asset path");
         video.setAssetPath("");
         const unsigned fileLoadsBeforeMemory = overlayLoads;
-        for (auto system : {SystemType::GameBoy,SystemType::GameBoyColor,SystemType::GameBoyAdvance,SystemType::SuperNintendo}) {
+        for (auto system : {SystemType::GameBoy,SystemType::GameBoyColor,SystemType::GameBoyAdvance,
+                            SystemType::SuperNintendo,SystemType::NintendoEntertainmentSystem}) {
             require(video.setHandheldOverlay(system,true,error),error);
             const bool snes = system == SystemType::SuperNintendo, gba = system == SystemType::GameBoyAdvance;
-            overlayFrame(gba ? 240 : snes ? 256 : 160, gba ? 160 : snes ? 224 : 144, !snes,
-                snes ? SDL_Rect{240,0,1440,1080} : gba ? SDL_Rect{310,106,1300,868} : SDL_Rect{552,166,816,748},
-                snes ? SDL_Rect{272,24,1376,1032} : gba ? SDL_Rect{360,140,1200,800} : SDL_Rect{560,180,800,720},
+            const bool nes = system == SystemType::NintendoEntertainmentSystem;
+            overlayFrame(gba ? 240 : (snes || nes) ? 256 : 160, gba ? 160 : (snes || nes) ? 224 : 144,
+                !snes && !nes,
+                nes ? SDL_Rect{258,18,1404,1044} : snes ? SDL_Rect{240,0,1440,1080} : gba ? SDL_Rect{310,106,1300,868} : SDL_Rect{552,166,816,748},
+                nes ? SDL_Rect{264,18,1392,1044} : snes ? SDL_Rect{272,24,1376,1032} : gba ? SDL_Rect{360,140,1200,800} : SDL_Rect{560,180,800,720},
                 (std::string(systemId(system)) + "-preloaded.png").c_str(),system);
         }
-        require(overlayLoads == fileLoadsBeforeMemory && memoryImageLoads == decodesBeforePreload + 4 &&
-                overlayTextureCreates == texturesBeforePreload + 4, "Preloaded artwork did not decode exactly once per system");
+        require(overlayLoads == fileLoadsBeforeMemory && memoryImageLoads == decodesBeforePreload + 5 &&
+                overlayTextureCreates == texturesBeforePreload + 5, "Preloaded artwork did not decode exactly once per system");
         video.setAssetPath(preloadRoot.string() + "/no-longer-mounted");
         require(video.handheldOverlayActive(), "A new alias invalidated the preloaded texture");
         require(video.setHandheldOverlay(SystemType::SuperNintendo,false,error),error);
         require(video.setHandheldOverlay(SystemType::SuperNintendo,true,error),error);
-        require(overlayLoads == fileLoadsBeforeMemory && memoryImageLoads == decodesBeforePreload + 4 &&
-                overlayTextureCreates == texturesBeforePreload + 4, "Toggling preloaded artwork reread or decoded its image");
+        require(overlayLoads == fileLoadsBeforeMemory && memoryImageLoads == decodesBeforePreload + 5 &&
+                overlayTextureCreates == texturesBeforePreload + 5, "Toggling preloaded artwork reread or decoded its image");
         std::printf("PASS: GB/GBA native fit and integer bounds, default N64 aspect, nearest/bilinear pixels, texture/filter reuse (%s).\n",
                     accelerated ? "GLES2" : "software");
-        std::puts("PASS: GB/GBC/GBA/SNES overlays, safe apertures, cached toggles, no per-frame loads, missing/invalid artwork fallback, no stale system artwork.");
+        std::puts("PASS: GB/GBC/GBA/NES/SNES overlays, safe apertures, cached toggles, no per-frame loads, missing/invalid artwork fallback, no stale system artwork.");
         return 0;
     } catch (const std::exception& exception) {
         std::fprintf(stderr,"FAIL: %s\n",exception.what()); return 1;

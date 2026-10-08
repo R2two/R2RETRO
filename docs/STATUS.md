@@ -1,5 +1,16 @@
 # Estado de desarrollo — 7 de octubre de 2026
 
+## v0.5.7 — arreglo de NES y marco de consola
+
+Corrige el negro de NES en PS4: se retira `-fdata-sections` de los núcleos de
+consola y portátiles; el cargador SELF no mapea las secciones `.data.<nombre>`
+y la paleta se leía a cero. Se añade marco de consola para NES con la imagen
+aportada (`assets/overlays/nes.png`), activo por defecto como SNES, y la textura
+del juego pasa a ARGB8888 opaco. 52/52 CTest, PKG local validado con el recurso,
+composición del marco verificada (4/4 muestras) y confirmación física del usuario
+(«funciona perfectamente»). Sin publicación remota al redactar esta nota.
+[Detalle técnico](NES-PALETTE-AND-OVERLAY.md).
+
 ## v0.5.6 — paquete Color GB y estabilidad
 
 Publicada como pre-release https://github.com/R2two/R2RETRO/releases/tag/v0.5.6,

@@ -9,6 +9,36 @@ La pantalla negra **no se ha reproducido en Linux**. Tampoco se ha comprobado
 la corrección en una PS4 física. La revisión del núcleo y sus opciones no se
 actualizaron para esta investigación.
 
+## Cambio candidato posterior: textura de juego ARGB8888 opaco (sin compilar)
+
+La auditoría del camino de píxeles NES (FCEUmm `FRONTEND_SUPPORTS_RGB888` →
+`memcpy` XRGB8888 en el puente → textura streaming) no encontró un bug estático:
+el formato, el pitch y el orden de bytes son coherentes y se reproducen bien en
+Linux/Mesa. Como el síntoma "audio OK + vídeo negro" es específico de
+PS4/Piglet y la ruta del núcleo es idéntica en ambos targets, el candidato más
+probable es la **presentación**: la textura del juego usaba
+`SDL_PIXELFORMAT_RGB888` (XRGB empaquetado de 24 bits, que en un driver GLES2
+de consola puede mapearse a `GL_RGB` y renderizarse mal).
+
+Cambios fuente aplicados (sin compilar):
+
+- `CoreFrame::pixels` pasa de `0x00RRGGBB` a **`0xFFRRGGBB` opaco**:
+  el puente fuerza el byte alfa a `0xFF` en la conversión XRGB8888 y 16 bits
+  ([`core/libretro_core.cpp`](../core/libretro_core.cpp)).
+- La textura de juego pasa de `SDL_PIXELFORMAT_RGB888` a
+  **`SDL_PIXELFORMAT_ARGB8888`** (formato canónico de 32 bits en GLES2),
+  conservando `SDL_BLENDMODE_NONE` ([`src/video.cpp`](../src/video.cpp)).
+- `play.cpp` registra el conteo "No negros" también en el cuadro 180, no solo
+  en el primero y en pausa, para que el log capture un cuadro de juego real.
+- Pruebas fuente adaptadas al nuevo contrato (`handheld_video_tests`,
+  `libretro_bridge_tests`, comentario de `rom_probe`).
+
+**Esto es un candidato, no un arreglo confirmado.** No se compiló ni se generó
+PKG. Si el negro real era del núcleo (no de presentación), este cambio no lo
+corrige; el conteo "No negros" de pausa sigue siendo el discriminador: `0`
+indica núcleo negro, un valor mayor indica presentación. Queda pendiente
+compilar y contrastar en PS4 física.
+
 ## Copia local y pruebas del núcleo
 
 Se leyó directamente, sin copiarla al repositorio ni al PKG:
