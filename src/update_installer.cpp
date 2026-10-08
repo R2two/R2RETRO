@@ -108,14 +108,13 @@ bool queueUpdateInstall(const std::string& path, const UpdateRelease& release, s
     static_assert(offsetof(Extended,slot)==offsetof(OrbisBgftDownloadParamEx,slot),"BGFT slot ABI");
     const auto name="R2RETRO "+release.version;
     p.params.userId=user; p.params.entitlementType=5;
-    p.params.id=UpdateContentId; p.params.url=systemPath.c_str(); p.params.name=name.c_str();
-    // BGFT reads these C-string fields; never pass NULL where the ABI expects a
-    // string. contentExUrl/skuId/releaseDate were previously left unset (NULL).
+    // flatz's working BGFT install leaves `id` empty. Passing the installed
+    // Content ID made BGFT report "content already exists" (0x80990088).
+    p.params.id=""; p.params.url=systemPath.c_str(); p.params.name=name.c_str();
     p.params.extra=""; p.params.icon=""; p.params.sku="";
-    // FORCE_UPDATE forces a same-version reinstall and made BGFT report
-    // "content already exists" (0x80990088) during a normal version upgrade.
-    // Register a normal update: the higher SFO version selects the update path.
-    p.params.option=ORBIS_BGFT_TASK_OPT_NONE;
+    // flatz uses DISABLE_CDN_QUERY_PARAM for a direct storage install; both
+    // FORCE_UPDATE and NONE tripped the content conflict here.
+    p.params.option=ORBIS_BGFT_TASK_OPT_DISABLE_CDN_QUERY_PARAM;
     p.params.scenario="0"; p.params.date=""; p.params.type="PS4GD"; p.params.subtype="";
     p.params.size=release.size; p.slot=uint32_t(slot);
     OrbisBgftTaskId task=-1;
