@@ -4,7 +4,8 @@ Resumen editorial de hitos existentes. [STATUS](docs/STATUS.md) conserva pruebas
 
 | Versión | Hito |
 |---|---|
-| **0.5.11** | Corrección real del autoinstalador: BGFT con `id` vacío y `DISABLE_CDN_QUERY_PARAM`. [Notas](docs/releases/v0.5.11.md). |
+| **0.5.13** | Autoactualización por instalación directa AppInstUtil (sin BGFT). [Notas](docs/releases/v0.5.13.md). |
+| **0.5.11** | Corrección del autoinstalador BGFT (id vacío, `DISABLE_CDN_QUERY_PARAM`). [Notas](docs/releases/v0.5.11.md). |
 | **0.5.9** | Corrección del instalador de actualizaciones (conflicto BGFT 0x80990088). [Notas](docs/releases/v0.5.9.md). |
 | **0.5.7** | Corrección del negro de NES en PS4 (sección de datos) y marco de consola para NES. [Notas](docs/releases/v0.5.7.md). |
 | **0.5.6** | Color GB on/off, región NES y diagnósticos NES/SNES, reutilización de texturas, rutas del instalador y Acerca de/Ko-fi. [Notas](docs/releases/v0.5.6.md). |

@@ -1,9 +1,7 @@
 #include "update.h"
 #ifdef R2N64_PS4
 #include <orbis/AppInstUtil.h>
-#include <orbis/Bgft.h>
 #include <orbis/Sysmodule.h>
-#include <orbis/UserService.h>
 #include <cstddef>
 #include <cerrno>
 #include <cstdio>
@@ -68,7 +66,6 @@ bool queueUpdateInstall(const std::string& path, const UpdateRelease& release, s
         }
     }
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_APP_INST_UTIL);
-    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_BGFT);
     static bool appReady=false;
     int32_t rc=0;
     if(!appReady) { rc=sceAppInstUtilInitialize(); if(rc) return failed("AppInstUtil",rc); appReady=true; }
@@ -79,63 +76,14 @@ bool queueUpdateInstall(const std::string& path, const UpdateRelease& release, s
     int32_t updating=0;
     rc=sceAppInstUtilAppIsInUpdating(UpdateTitleId,&updating);
     if(rc || updating) return failed("actualización ya activa o consulta fallida",rc?rc:-1);
-    int32_t slot=0,user=-1;
-    rc=sceAppInstUtilGetPrimaryAppSlot(UpdateTitleId,&slot);
-    if(rc || slot<0) return failed("slot instalado",rc?rc:-1);
-    rc=sceUserServiceGetForegroundUser(&user);
-    if(rc || user<0) return failed("usuario activo",rc?rc:-1);
-    static OrbisBgftInitParams init{};
-    static bool ready=false;
-    if(!ready) {
-        init.heapSize=1024*1024; init.heap=std::calloc(1,init.heapSize);
-        if(!init.heap) return failed("memoria BGFT",-1);
-        rc=sceBgftServiceIntInit(&init);
-        if(rc) { std::free(init.heap); init={}; return failed("iniciar BGFT",rc); }
-        ready=true;
-    }
-    // OpenOrbis declares a 32-bit size followed by padding; the ABI uses 64.
-    struct Params {
-        int32_t userId,entitlementType;
-        const char *id,*url,*extra,*name,*icon,*sku;
-        OrbisBgftTaskOpt option;
-        const char *scenario,*date,*type,*subtype;
-        uint64_t size;
-    };
-    struct Extended { Params params; uint32_t slot; } p{};
-    static_assert(sizeof(Params)==sizeof(OrbisBgftDownloadParam),"BGFT ABI");
-    static_assert(offsetof(Params,size)==offsetof(OrbisBgftDownloadParam,packageSize),"BGFT size ABI");
-    static_assert(sizeof(Extended)==sizeof(OrbisBgftDownloadParamEx),"BGFT storage ABI");
-    static_assert(offsetof(Extended,slot)==offsetof(OrbisBgftDownloadParamEx,slot),"BGFT slot ABI");
-    const auto name="R2RETRO "+release.version;
-    p.params.userId=user; p.params.entitlementType=5;
-    // flatz's working BGFT install leaves `id` empty. Passing the installed
-    // Content ID made BGFT report "content already exists" (0x80990088).
-    p.params.id=""; p.params.url=systemPath.c_str(); p.params.name=name.c_str();
-    p.params.extra=""; p.params.icon=""; p.params.sku="";
-    // flatz uses DISABLE_CDN_QUERY_PARAM for a direct storage install; both
-    // FORCE_UPDATE and NONE tripped the content conflict here.
-    p.params.option=ORBIS_BGFT_TASK_OPT_DISABLE_CDN_QUERY_PARAM;
-    p.params.scenario="0"; p.params.date=""; p.params.type="PS4GD"; p.params.subtype="";
-    p.params.size=release.size; p.slot=uint32_t(slot);
-    OrbisBgftTaskId task=-1;
-    rc=sceBgftServiceIntDownloadRegisterTaskByStorageEx(reinterpret_cast<OrbisBgftDownloadParamEx*>(&p),&task);
-    // Never copy upstream's uninstall/retry path: self-update must preserve data.
-    if(rc || task<0) {
-        const int32_t code=rc?rc:-1;
-        // 0x80990088 / 0x80990015 = content already exists (installed app or a
-        // stale BGFT task). Surface an actionable message instead of a bare code.
-        if(code==static_cast<int32_t>(0x80990088) || code==static_cast<int32_t>(0x80990015)) {
-            error="Instalador PS4: conflicto con contenido existente (0x80990088). Revisa Notificaciones → Descargas o cancela una actualización previa de R2RETRO. PKG conservado; no se desinstaló R2RETRO.";
-            return false;
-        }
-        return failed("registrar reemplazo",code);
-    }
-    rc=sceBgftServiceDownloadStartTask(task);
-    if(rc) {
-        const int32_t cleanup=sceBgftServiceIntDownloadUnregisterTask(task);
-        if(cleanup) return failed("inicio fallido; revisar tarea en Descargas",rc);
-        return failed("iniciar instalación",rc);
-    }
+    // Self-update: direct AppInstUtil overwrite (flatz's primary method). BGFT
+    // registration returned 0x80990088 no matter the id/option, so install the
+    // PKG directly instead of queuing a background download task. This moves
+    // the file to /user/app/<title id>/app.pkg without a second BGFT copy.
+    rc=sceAppInstUtilAppPrepareOverwritePkg(systemPath.c_str());
+    if(rc) return failed("preparar sobreescritura",rc);
+    rc=sceAppInstUtilAppInstallPkg(systemPath.c_str(),nullptr);
+    if(rc) return failed("instalar paquete",rc);
     error.clear(); return true;
 #else
     (void)path; (void)release;

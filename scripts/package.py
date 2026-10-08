@@ -17,8 +17,8 @@ TITLE_ID = "RNTD00064"
 CONTENT_ID = f"IV0001-{TITLE_ID}_00-R2N64APP00000001"
 # Preserve installed application/save identity when changing the public brand.
 APP_TITLE = "R2RETRO"
-VERSION = "0.5.11"
-SFO_VERSION = "00.61"
+VERSION = "0.5.13"
+SFO_VERSION = "00.63"
 OVERLAYS = {"gb": "gb.png", "gbc": "gbc.png", "gba": "gba.png", "nes": "nes.png", "snes": "snes.jpg"}
 
 
