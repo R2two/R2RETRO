@@ -1,10 +1,10 @@
 R2RETRO-UPDATE-1
-version=0.5.7
-sfo=00.57
+version=0.5.9
+sfo=00.59
 channel=experimental
-url=https://github.com/R2two/R2RETRO/releases/download/v0.5.7/R2RETRO-v0.5.7-nes-fix-overlay.pkg
-sha256=7abd7c43e1187e1b5d1f1e1649c10c7fde201d8f1b940bf9be1b08526e10b104
+url=https://github.com/R2two/R2RETRO/releases/download/v0.5.9/R2RETRO-v0.5.9-installer-fix.pkg
+sha256=19b89a5fe3953513c57dbdc7ace07c3320da15d8c310c3345ba950e026fbdcb7
 size=70582272
-notes=Corrige el negro de NES en PS4 (paleta) y añade marco de consola para NES. Experimental; validación PS4 pendiente.
+notes=Corrige el instalador de actualizaciones (conflicto BGFT 0x80990088). Experimental; validación PS4 pendiente.
 title_id=RNTD00064
 content_id=IV0001-RNTD00064_00-R2N64APP00000001
