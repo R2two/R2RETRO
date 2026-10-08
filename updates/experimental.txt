@@ -1,10 +1,10 @@
 R2RETRO-UPDATE-1
-version=0.5.6
-sfo=00.56
+version=0.5.7
+sfo=00.57
 channel=experimental
-url=https://github.com/R2two/R2RETRO/releases/download/v0.5.6/R2RETRO-v0.5.6-color-stability.pkg
-sha256=1d0b3f1ae2580fc9ee0218606206da0bc53e3029e481535038393e1d607172be
-size=65994752
-notes=Color GB opcional, ajustes NES/SNES, menos cargas de textura, corrección de ruta del instalador y Acerca de con Ko-fi. Experimental: primera instalación manual; validación PS4 pendiente.
+url=https://github.com/R2two/R2RETRO/releases/download/v0.5.7/R2RETRO-v0.5.7-nes-fix-overlay.pkg
+sha256=7abd7c43e1187e1b5d1f1e1649c10c7fde201d8f1b940bf9be1b08526e10b104
+size=70582272
+notes=Corrige el negro de NES en PS4 (paleta) y añade marco de consola para NES. Experimental; validación PS4 pendiente.
 title_id=RNTD00064
 content_id=IV0001-RNTD00064_00-R2N64APP00000001
