@@ -4,6 +4,7 @@ Resumen editorial de hitos existentes. [STATUS](docs/STATUS.md) conserva pruebas
 
 | Versión | Hito |
 |---|---|
+| **0.5.9** | Corrección del instalador de actualizaciones (conflicto BGFT 0x80990088). [Notas](docs/releases/v0.5.9.md). |
 | **0.5.7** | Corrección del negro de NES en PS4 (sección de datos) y marco de consola para NES. [Notas](docs/releases/v0.5.7.md). |
 | **0.5.6** | Color GB on/off, región NES y diagnósticos NES/SNES, reutilización de texturas, rutas del instalador y Acerca de/Ko-fi. [Notas](docs/releases/v0.5.6.md). |
 | **0.5.5** | Shaders LCD/CRT, SRAM/RTC en pausa, frameskip GBA, Cloudflare fijo, logos revisados y actualizador. [Notas](docs/releases/v0.5.5.md). |

@@ -17,8 +17,8 @@ TITLE_ID = "RNTD00064"
 CONTENT_ID = f"IV0001-{TITLE_ID}_00-R2N64APP00000001"
 # Preserve installed application/save identity when changing the public brand.
 APP_TITLE = "R2RETRO"
-VERSION = "0.5.7"
-SFO_VERSION = "00.57"
+VERSION = "0.5.9"
+SFO_VERSION = "00.59"
 OVERLAYS = {"gb": "gb.png", "gbc": "gbc.png", "gba": "gba.png", "nes": "nes.png", "snes": "snes.jpg"}
 
 
@@ -155,13 +155,14 @@ def main():
         raise RuntimeError("Missing ELF output")
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    destination = dist / f"R2RETRO-v{VERSION}-nes-fix-overlay.pkg"
+    destination = dist / f"R2RETRO-v{VERSION}-installer-fix.pkg"
     shutil.copy2(package, destination)
     shutil.copy2(elf, args.build / "R2RETRO.elf")
     digest = hashlib.sha256(destination.read_bytes()).hexdigest()
     (dist / (destination.name + ".sha256")).write_text(f"{digest}  {destination.name}\n")
     (dist / "build-info.json").write_text(json.dumps({
-        "version": VERSION, "milestone": "nes-fix-overlay", "title": APP_TITLE,
+        "version": VERSION, "milestone": "installer-fix", "title": APP_TITLE,
+        "selfupdate_fix": "removed-FORCE_UPDATE-for-version-upgrade; initialized-BGFT-string-fields; clear-conflict-message",
         "nes_palette_fix": "removed-fdata-sections-from-console-handheld-cores; PS4-SELF-loader-does-not-map-split-data-sections; restores-NES-palette",
         "nes_overlay": "console-frame-with-transparent-screen-hole; aperture-258-18-1404-1044; enabled-by-default-like-SNES",
         "gb_color": "optional-four-tone-DMG-palette; live-toggle; persisted; restores-base-palette",
@@ -218,7 +219,7 @@ def main():
     shutil.copy2(dist / "build-info.json", dist / f"build-info-v{VERSION}.json")
     subprocess.run([sys.executable, str(ROOT / "scripts/prepare-update.py"), "--pkg", str(destination),
                     "--build-info", str(dist / "build-info.json"), "--channel", "experimental",
-                    "--notes", "Corrige el negro de NES en PS4 (paleta) y añade marco de consola para NES. Experimental; validación PS4 pendiente.",
+                    "--notes", "Corrige el instalador de actualizaciones (conflicto BGFT 0x80990088). Experimental; validación PS4 pendiente.",
                     "--output", str(dist / f"update-v{VERSION}-experimental.txt")], check=True)
     print(f"PKG validado: {destination} ({destination.stat().st_size} bytes)")
 

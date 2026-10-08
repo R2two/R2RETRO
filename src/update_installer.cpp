@@ -109,13 +109,28 @@ bool queueUpdateInstall(const std::string& path, const UpdateRelease& release, s
     const auto name="R2RETRO "+release.version;
     p.params.userId=user; p.params.entitlementType=5;
     p.params.id=UpdateContentId; p.params.url=systemPath.c_str(); p.params.name=name.c_str();
-    p.params.icon=""; p.params.option=ORBIS_BGFT_TASK_OPT_FORCE_UPDATE;
-    p.params.scenario="0"; p.params.type="PS4GD"; p.params.subtype="";
+    // BGFT reads these C-string fields; never pass NULL where the ABI expects a
+    // string. contentExUrl/skuId/releaseDate were previously left unset (NULL).
+    p.params.extra=""; p.params.icon=""; p.params.sku="";
+    // FORCE_UPDATE forces a same-version reinstall and made BGFT report
+    // "content already exists" (0x80990088) during a normal version upgrade.
+    // Register a normal update: the higher SFO version selects the update path.
+    p.params.option=ORBIS_BGFT_TASK_OPT_NONE;
+    p.params.scenario="0"; p.params.date=""; p.params.type="PS4GD"; p.params.subtype="";
     p.params.size=release.size; p.slot=uint32_t(slot);
     OrbisBgftTaskId task=-1;
     rc=sceBgftServiceIntDownloadRegisterTaskByStorageEx(reinterpret_cast<OrbisBgftDownloadParamEx*>(&p),&task);
     // Never copy upstream's uninstall/retry path: self-update must preserve data.
-    if(rc || task<0) return failed("registrar reemplazo",rc?rc:-1);
+    if(rc || task<0) {
+        const int32_t code=rc?rc:-1;
+        // 0x80990088 / 0x80990015 = content already exists (installed app or a
+        // stale BGFT task). Surface an actionable message instead of a bare code.
+        if(code==static_cast<int32_t>(0x80990088) || code==static_cast<int32_t>(0x80990015)) {
+            error="Instalador PS4: conflicto con contenido existente (0x80990088). Revisa Notificaciones → Descargas o cancela una actualización previa de R2RETRO. PKG conservado; no se desinstaló R2RETRO.";
+            return false;
+        }
+        return failed("registrar reemplazo",code);
+    }
     rc=sceBgftServiceDownloadStartTask(task);
     if(rc) {
         const int32_t cleanup=sceBgftServiceIntDownloadUnregisterTask(task);
