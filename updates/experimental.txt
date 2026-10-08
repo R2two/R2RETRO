@@ -1,9 +1,9 @@
 R2RETRO-UPDATE-1
-version=0.5.9
-sfo=00.59
+version=0.5.11
+sfo=00.61
 channel=experimental
-url=https://github.com/R2two/R2RETRO/releases/download/v0.5.9/R2RETRO-v0.5.9-installer-fix.pkg
-sha256=19b89a5fe3953513c57dbdc7ace07c3320da15d8c310c3345ba950e026fbdcb7
+url=https://github.com/R2two/R2RETRO/releases/download/v0.5.11/R2RETRO-v0.5.11-installer-fix.pkg
+sha256=64f9582cb0258eb651485df3e03efc5c959c84ff1fc3aa85915be25441f0b77a
 size=70582272
 notes=Corrige el instalador de actualizaciones (conflicto BGFT 0x80990088). Experimental; validación PS4 pendiente.
 title_id=RNTD00064
